@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Urban Sound Narrative Generator</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+<style>
+
+.fade-out {
+  animation: fadeOut 0.6s ease-out forwards;
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(20px); }
+}
+
+
+@keyframes wave {
+    0%, 100% { transform: scaleY(0.4); }
+    50% { transform: scaleY(1); }
+}
+@keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-8px); }
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.wave-bar {
+    animation: wave 1.8s infinite ease-in-out;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass {
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.glass-card {
+    background: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(60px) saturate(200%);
+    -webkit-backdrop-filter: blur(60px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #000000;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+.btn-primary {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.06) 100%);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-primary:hover {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.1) 100%);
+    transform: translateY(-2px);
+}
+.btn-accent {
+    background: linear-gradient(180deg, #ffffff 0%, #f5f5f5 100%);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-accent:hover {
+    background: linear-gradient(180deg, #f5f5f5 0%, #e8e8e8 100%);
+    transform: translateY(-2px);
+}
+.fade-in {
+    animation: fadeIn 0.8s ease-out forwards;
+}
+</style>
+</head>
+<body class="min-h-screen">
+<div class="relative min-h-screen overflow-hidden">
+<!-- Subtle gradient orb -->
+<div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-gradient-radial from-white/[0.02] to-transparent blur-3xl pointer-events-none"></div>
+
+<div class="relative z-10 flex min-h-screen flex-col px-6 py-16 sm:px-8 md:px-16 lg:px-32">
+    <div class="flex flex-1 items-center justify-center">
+        <div class="w-full max-w-3xl fade-in">
+            <!-- Header -->
+            <div class="mb-16 text-center">
+                <h1 class="text-5xl sm:text-6xl lg:text-7xl font-semibold tracking-tight text-white mb-3" style="letter-spacing: -0.02em;">
+                    Sound Narrative Generator
+                </h1>
+                <p class="text-lg font-normal text-white/40 mb-6">
+                    Transform real-world audio into vivid storytelling
+                </p>
+                <p class="text-sm font-normal text-white/30 max-w-2xl mx-auto leading-relaxed">
+                    Record or upload any audio—bustling streets, nature sounds, or everyday moments—and watch as AI crafts atmospheric narratives that bring your soundscapes to life.
+                </p>
+            </div>
+
+            <!-- Waveform Visualizer -->
+            <div class="glass-card mb-10 overflow-hidden rounded-3xl p-8 shadow-2xl shadow-black/20">
+                <div class="flex h-48 items-center justify-center gap-1.5">
+                    <div class="wave-bar h-1/4 w-1 rounded-full bg-white/90" style="animation-delay: -1.6s"></div>
+                    <div class="wave-bar h-2/5 w-1 rounded-full bg-white/90" style="animation-delay: -1.4s"></div>
+                    <div class="wave-bar h-3/5 w-1 rounded-full bg-white/90" style="animation-delay: -1.2s"></div>
+                    <div class="wave-bar h-4/5 w-1 rounded-full bg-white/90" style="animation-delay: -1s"></div>
+                    <div class="wave-bar h-full w-1 rounded-full bg-white" style="animation-delay: -0.8s"></div>
+                    <div class="wave-bar h-4/5 w-1 rounded-full bg-white/90" style="animation-delay: -0.6s"></div>
+                    <div class="wave-bar h-3/5 w-1 rounded-full bg-white/90" style="animation-delay: -0.4s"></div>
+                    <div class="wave-bar h-2/5 w-1 rounded-full bg-white/90" style="animation-delay: -0.2s"></div>
+                    <div class="wave-bar h-3/5 w-1 rounded-full bg-white/90" style="animation-delay: 0s"></div>
+                    <div class="wave-bar h-full w-1 rounded-full bg-white" style="animation-delay: 0.2s"></div>
+                    <div class="wave-bar h-4/5 w-1 rounded-full bg-white/90" style="animation-delay: 0.4s"></div>
+                    <div class="wave-bar h-3/5 w-1 rounded-full bg-white/90" style="animation-delay: 0.6s"></div>
+                    <div class="wave-bar h-2/5 w-1 rounded-full bg-white/90" style="animation-delay: 0.8s"></div>
+                    <div class="wave-bar h-3/5 w-1 rounded-full bg-white/90 hidden sm:block" style="animation-delay: 1s"></div>
+                    <div class="wave-bar h-4/5 w-1 rounded-full bg-white/90 hidden sm:block" style="animation-delay: 1.2s"></div>
+                    <div class="wave-bar h-full w-1 rounded-full bg-white hidden sm:block" style="animation-delay: 1.4s"></div>
+                    <div class="wave-bar h-4/5 w-1 rounded-full bg-white/90 hidden md:block" style="animation-delay: 1.6s"></div>
+                    <div class="wave-bar h-3/5 w-1 rounded-full bg-white/90 hidden md:block" style="animation-delay: 1.8s"></div>
+                    <div class="wave-bar h-2/5 w-1 rounded-full bg-white/90 hidden md:block" style="animation-delay: 2s"></div>
+                    <div class="wave-bar h-1/4 w-1 rounded-full bg-white/90 hidden md:block" style="animation-delay: 2.2s"></div>
+                </div>
+            </div>
+
+            <!-- Input Controls -->
+            <div class="mb-8 flex flex-col items-center gap-5 sm:flex-row sm:justify-center">
+                <button class="group flex h-16 w-16 items-center justify-center rounded-full bg-white text-black shadow-xl shadow-black/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/30">
+                    <span class="material-symbols-outlined text-3xl">mic</span>
+                </button>
+                
+                <div class="flex items-center gap-3">
+                    <div class="h-px w-8 bg-white/10"></div>
+                    <span class="text-xs font-medium uppercase tracking-wider text-white/30">or</span>
+                    <div class="h-px w-8 bg-white/10"></div>
+                </div>
+
+                <button class="glass group flex h-14 w-full max-w-xs items-center justify-center gap-2.5 rounded-2xl px-6 font-medium text-white/90 shadow-lg shadow-black/10 transition-all duration-300 hover:-translate-y-1 hover:bg-white/8 hover:shadow-xl hover:shadow-black/20">
+                    <span class="material-symbols-outlined text-xl">upload_file</span>
+                    <span class="text-[15px]">Upload Audio</span>
+                </button>
+            </div>
+
+            <!-- Generate Button -->
+            <div class="flex justify-center mb-12">
+                <button class="btn-accent group h-14 rounded-full px-12 text-[15px] font-semibold text-black shadow-2xl shadow-black/30 hover:shadow-3xl">
+                    Generate Narrative
+                </button>
+            </div>
+
+            <!-- Example Section -->
+            <div class="glass rounded-3xl p-6 sm:p-8 shadow-lg shadow-black/10">
+                <div class="mb-4">
+                    <h3 class="text-sm font-semibold uppercase tracking-wider text-white/50 mb-3">Example Output</h3>
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <span class="text-xs px-3 py-1.5 rounded-full bg-white/5 text-white/60 border border-white/10">Cars passing</span>
+                        <span class="text-xs px-3 py-1.5 rounded-full bg-white/5 text-white/60 border border-white/10">Dog barking</span>
+                        <span class="text-xs px-3 py-1.5 rounded-full bg-white/5 text-white/60 border border-white/10">Children laughing</span>
+                        <span class="text-xs px-3 py-1.5 rounded-full bg-white/5 text-white/60 border border-white/10">Construction drilling</span>
+                        <span class="text-xs px-3 py-1.5 rounded-full bg-white/5 text-white/60 border border-white/10">Bicycle bell</span>
+                    </div>
+                </div>
+                <p class="text-[15px] leading-relaxed text-white/70 italic">
+                    "The afternoon pulse of the city beats steadily. Cars rush past in waves, their engines humming a familiar urban melody. Somewhere nearby, a dog barks—sharp, insistent—perhaps protesting a passing stranger. Children's laughter bubbles up from the sidewalk, bright and carefree against the mechanical backdrop. In the distance, the rhythmic pounding of construction work reminds everyone that the city is always reinventing itself. A bicycle bell chimes—a polite warning—as a cyclist weaves through the pedestrian flow."
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+</body>
+
+<script>
+document.querySelector('.btn-accent').addEventListener('click', (e) => {
+  e.preventDefault();
+
+  // Add a fade-out class to body
+  document.body.classList.add('fade-out');
+
+  // Wait for animation to complete (match animation duration)
+  setTimeout(() => {
+    window.location.href = "processing.html";
+  }, 600); // same duration as fade-out animation
+});
+</script>
+
+</html>
+

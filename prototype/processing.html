@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <meta name="description" content="Transform real-world audio into vivid storytelling with the Sound Narrative Generator."/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+    <title>Sound Narrative Generator - Results</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap&font-display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined&display=swap" rel="stylesheet"/>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0a0a0a;
+            color: white;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            opacity: 0;
+            animation: fadeIn 0.6s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        @keyframes progressBar {
+            0% { width: 0%; }
+            100% { width: 100%; }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes iconPop {
+            0% { transform: scale(0); opacity: 0; }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -1000px 0; }
+            100% { background-position: 1000px 0; }
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes wave {
+            0%, 100% { height: 20%; opacity: 0.6; transform: scaleY(0.5); }
+            50% { height: 100%; opacity: 1; transform: scaleY(1.2); }
+        }
+
+        @keyframes textGlow {
+            0%, 100% { text-shadow: 0 0 4px rgba(0, 242, 255, 0.5); }
+            50% { text-shadow: 0 0 12px rgba(0, 242, 255, 0.8), 0 0 20px rgba(0, 242, 255, 0.6); }
+        }
+
+        @keyframes subtitleFade {
+            0% { opacity: 0; transform: translateY(10px); }
+            10% { opacity: 1; transform: translateY(0); }
+            90% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-10px); }
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(40px) saturate(180%);
+            -webkit-backdrop-filter: blur(40px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background-color: rgba(255, 255, 255, 0.04);
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(60px) saturate(200%);
+            -webkit-backdrop-filter: blur(60px) saturate(200%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background-color: rgba(255, 255, 255, 0.06);
+        }
+
+        .glass:hover, .glass-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-2px);
+        }
+
+        .glass:focus, .glass-card:focus {
+            outline: 2px solid rgba(255, 255, 255, 0.5);
+            outline-offset: 2px;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.6s ease-out forwards;
+        }
+
+        .fade-out {
+            animation: fadeOut 0.6s ease-out forwards;
+        }
+
+        .slide-up {
+            animation: slideUp 0.6s ease-out forwards;
+        }
+
+        .progress-animate {
+            animation: progressBar 4s ease-out forwards;
+        }
+
+        .icon-pop {
+            animation: iconPop 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+            opacity: 0;
+        }
+
+        .pulse {
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .shimmer {
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.03), transparent);
+            background-size: 1000px 100%;
+            animation: shimmer 2s infinite;
+        }
+
+        .spin {
+            animation: spin 2s linear infinite;
+        }
+
+        .wave-bar {
+            animation: wave 1.6s infinite ease-in-out;
+            background: linear-gradient(180deg, rgba(0, 242, 255, 0.8), rgba(255, 255, 255, 0.9));
+            box-shadow: 0 0 8px rgba(0, 242, 255, 0.5);
+        }
+
+        .subtitle {
+            animation: subtitleFade 3s ease-in-out, textGlow 1.5s ease-in-out infinite;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Responsive waveform */
+        .waveform-container {
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            height: 120px;
+            gap: 2px;
+        }
+
+        @media (max-width: 640px) {
+            .wave-bar:nth-child(n+20) {
+                display: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .wave-bar:nth-child(n+25) {
+                display: none;
+            }
+        }
+
+        /* Respect reduced motion preferences */
+        @media (prefers-reduced-motion: reduce) {
+            .wave-bar, .fade-in, .fade-out, .slide-up, .progress-animate, .icon-pop, .pulse, .shimmer, .spin, .subtitle {
+                animation: none;
+                transition: none;
+                text-shadow: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div style="position: relative; min-height: 100vh;">
+        <!-- Subtle gradient orb -->
+        <div style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 800px; height: 600px; background: radial-gradient(circle, rgba(255, 255, 255, 0.02) 0%, transparent 70%); filter: blur(80px); pointer-events: none;"></div>
+
+        <div style="position: relative; z-index: 10;">
+            <!-- Header -->
+            <header style="padding: 32px 24px;">
+                <div style="max-width: 1400px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between;">
+                    <div>
+                        <h1 style="font-size: 24px; font-weight: 600; color: white; letter-spacing: -0.02em;">
+                            Sound Narrative Generator
+                        </h1>
+                        <p style="font-size: 14px; color: rgba(255, 255, 255, 0.4); margin-top: 4px;">Transform audio into stories</p>
+                    </div>
+                    <button id="new-narrative" class="glass" style="display: flex; height: 40px; align-items: center; gap: 8px; border-radius: 9999px; padding: 0 16px; font-size: 14px; font-weight: 500; color: rgba(255, 255, 255, 0.9); cursor: pointer; transition: all 0.3s;" aria-label="Start a new narrative">
+                        <span class="material-symbols-outlined" style="font-size: 18px;">add</span>
+                        New
+                    </button>
+                </div>
+            </header>
+
+            <!-- Main Content -->
+            <main style="padding: 0 24px 64px;">
+                <div style="max-width: 1000px; margin: 0 auto;">
+                    <!-- PHASE 1: Processing/Generating -->
+                    <div id="processingPhase" class="fade-in">
+                        <div class="glass-card" style="border-radius: 24px; padding: 48px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); position: relative; overflow: hidden;">
+                            <div class="shimmer" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none;"></div>
+                            <div style="position: relative; z-index: 1;">
+                                <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 24px;">
+                                    <div class="pulse" style="height: 8px; width: 8px; border-radius: 50%; background: white;"></div>
+                                    <h2 style="font-size: 20px; font-weight: 600; color: white;">Generating Narrative</h2>
+                                    <div class="spin">
+                                        <span class="material-symbols-outlined" style="color: rgba(255, 255, 255, 0.3);">autorenew</span>
+                                    </div>
+                                </div>
+                                <div style="margin-bottom: 32px;">
+                                    <div style="height: 4px; width: 100%; max-width: 400px; margin: 0 auto; border-radius: 9999px; background: rgba(255, 255, 255, 0.1); overflow: hidden;">
+                                        <div class="progress-animate" style="height: 100%; border-radius: 9999px; background: white;"></div>
+                                    </div>
+                                </div>
+                                <div style="text-align: center;">
+                                    <p style="font-size: 14px; color: rgba(255, 255, 255, 0.5); margin-bottom: 20px;">Detecting sounds</p>
+                                    <div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;">
+                                        <div class="icon-pop" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); animation-delay: 0.5s;">
+                                            <span class="material-symbols-outlined" style="font-size: 20px; color: white;">directions_car</span>
+                                            <span style="font-size: 14px; color: rgba(255, 255, 255, 0.8);">Vehicles</span>
+                                        </div>
+                                        <div class="icon-pop" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); animation-delay: 1s;">
+                                            <span class="material-symbols-outlined" style="font-size: 20px; color: white;">footprint</span>
+                                            <span style="font-size: 14px; color: rgba(255, 255, 255, 0.8);">Footsteps</span>
+                                        </div>
+                                        <div class="icon-pop" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); animation-delay: 1.5s;">
+                                            <span class="material-symbols-outlined" style="font-size: 20px; color: white;">notifications_active</span>
+                                            <span style="font-size: 14px; color: rgba(255, 255, 255, 0.8);">Siren</span>
+                                        </div>
+                                        <div class="icon-pop" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); animation-delay: 2s;">
+                                            <span class="material-symbols-outlined" style="font-size: 20px; color: white;">directions_bus</span>
+                                            <span style="font-size: 14px; color: rgba(255, 255, 255, 0.8);">Bus</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PHASE 2: Text Output -->
+                    <div id="textOutputPhase" class="hidden" style="opacity: 0;">
+                        <div class="glass-card" style="border-radius: 24px; padding: 48px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);">
+                            <h2 style="font-size: 24px; font-weight: 600; color: white; margin-bottom: 24px; text-align: center;">Your Narrative</h2>
+                            <div style="max-width: 700px; margin: 0 auto 32px;">
+                                <p style="font-size: 16px; line-height: 1.8; color: rgba(255, 255, 255, 0.8); margin-bottom: 20px;">
+                                    The sharp blare of a car horn cut through the rhythmic tap-tap of footsteps on wet pavement. In the distance, a siren wailed, a lonely cry in the concrete jungle. The city breathed around them—alive, restless, never truly silent.
+                                </p>
+                                <p style="font-size: 16px; line-height: 1.8; color: rgba(255, 255, 255, 0.8);">
+                                    A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Conversations bubbled up and faded away, fragments of lives intersecting for mere seconds before diverging again into the urban sprawl.
+                                </p>
+                            </div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;">
+                                <button id="narrationBtn" class="glass" style="display: flex; align-items: center; gap: 8px; border-radius: 16px; padding: 14px 24px; font-size: 15px; font-weight: 500; color: rgba(255, 255, 255, 0.9); cursor: pointer; transition: all 0.3s; border: none;" aria-label="Play narration">
+                                    <span class="material-symbols-outlined" style="font-size: 20px;">volume_up</span>
+                                    Play Narration
+                                </button>
+                                <button id="copyBtn" class="glass" style="display: flex; align-items: center; gap: 8px; border-radius: 16px; padding: 14px 24px; font-size: 15px; font-weight: 500; color: rgba(255, 255, 255, 0.9); cursor: pointer; transition: all 0.3s; border: none;" aria-label="Copy narrative text">
+                                    <span class="material-symbols-outlined" style="font-size: 20px;">content_copy</span>
+                                    Copy Text
+                                </button>
+                                <button id="exportBtn" class="glass" style="display: flex; align-items: center; gap: 8px; border-radius: 16px; padding: 14px 24px; font-size: 15px; font-weight: 500; color: rgba(255, 255, 255, 0.9); cursor: pointer; transition: all 0.3s; border: none;" aria-label="Export narrative">
+                                    <span class="material-symbols-outlined" style="font-size: 20px;">download</span>
+                                    Export
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PHASE 3: Narration with Waveform -->
+                    <div id="narrationPhase" class="hidden" style="opacity: 0;">
+                        <div class="glass-card" style="border-radius: 24px; padding: 48px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);">
+                            <div style="text-align: center; margin-bottom: 32px;">
+                                <h2 style="font-size: 24px; font-weight: 600; color: white; margin-bottom: 8px;">Playing Narration</h2>
+                                <p id="timeDisplay" style="font-size: 14px; color: rgba(255, 255, 255, 0.5);"><span id="currentTime">0:00</span> / <span id="duration">0:15</span></p>
+                            </div>
+                            <div class="waveform-container">
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -2.0s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -1.9s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -1.8s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -1.7s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -1.6s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -1.5s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -1.4s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -1.3s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -1.2s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -1.1s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -1.0s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -0.9s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -0.8s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -0.7s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -0.6s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -0.5s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -0.4s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -0.3s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -0.2s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: -0.1s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: 0s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: 0.1s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: 0.2s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: 0.3s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: 0.4s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: 0.5s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: 0.6s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: 0.7s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: 0.8s;"></div>
+                                <div class="wave-bar" style="width: 2px; border-radius: 9999px; animation-delay: 0.9s;"></div>
+                            </div>
+                            <div id="subtitleContainer" style="min-height: 80px; display: flex; align-items: center; justify-content: center; margin-bottom: 32px;">
+                                <p id="subtitleText" style="font-size: 18px; line-height: 1.6; color: white; text-align: center; max-width: 700px; font-weight: 500;"></p>
+                            </div>
+                            <div style="display: flex; gap: 12px; justify-content: center;">
+                                <button id="pauseBtn" style="display: flex; height: 56px; width: 56px; align-items: center; justify-content: center; border-radius: 50%; background: white; color: black; border: none; cursor: pointer; transition: all 0.3s;" aria-label="Pause narration">
+                                    <span class="material-symbols-outlined" style="font-size: 28px;">pause</span>
+                                </button>
+                                <button id="backBtn" class="glass" style="display: flex; align-items: center; gap: 8px; border-radius: 16px; padding: 14px 24px; font-size: 15px; font-weight: 500; color: rgba(255, 255, 255, 0.9); cursor: pointer; transition: all 0.3s; border: none;" aria-label="Back to text output">
+                                    <span class="material-symbols-outlined" style="font-size: 20px;">arrow_back</span>
+                                    Back to Text
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        const processingPhase = document.getElementById('processingPhase');
+        const textOutputPhase = document.getElementById('textOutputPhase');
+        const narrationPhase = document.getElementById('narrationPhase');
+        const narrationBtn = document.getElementById('narrationBtn');
+        const backBtn = document.getElementById('backBtn');
+        const subtitleText = document.getElementById('subtitleText');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const currentTimeEl = document.getElementById('currentTime');
+        const durationEl = document.getElementById('duration');
+        const newNarrativeBtn = document.getElementById('new-narrative');
+
+        const subtitles = [
+            "The sharp blare of a car horn cut through the rhythmic tap-tap of footsteps on wet pavement.",
+            "In the distance, a siren wailed, a lonely cry in the concrete jungle.",
+            "The city breathed around them—alive, restless, never truly silent.",
+            "A bus hissed to a stop nearby, its doors opening with a mechanical sigh.",
+            "Conversations bubbled up and faded away, fragments of lives intersecting for mere seconds."
+        ];
+
+        let subtitleIndex = 0;
+        let subtitleInterval;
+        let isPaused = false;
+        let currentTime = 0;
+        let totalDuration = subtitles.length * 3; // 3 seconds per subtitle
+        let timerInterval;
+
+        function formatTime(sec) {
+            if (isNaN(sec)) return '0:00';
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+
+        // Set initial duration
+        durationEl.textContent = formatTime(totalDuration);
+
+        // Simulate processing completion after 4 seconds
+        try {
+            setTimeout(() => {
+                console.log('Transitioning from processing to text output');
+                processingPhase.classList.add('fade-out');
+                setTimeout(() => {
+                    processingPhase.classList.add('hidden');
+                    textOutputPhase.classList.remove('hidden');
+                    textOutputPhase.classList.add('fade-in');
+                    textOutputPhase.style.opacity = '1';
+                }, 600);
+            }, 4000);
+        } catch (e) {
+            console.error('Error during phase transition:', e);
+        }
+
+        // Handle narration button click
+        narrationBtn.addEventListener('click', () => {
+            try {
+                console.log('Starting narration phase');
+                textOutputPhase.classList.add('fade-out');
+                setTimeout(() => {
+                    textOutputPhase.classList.add('hidden');
+                    narrationPhase.classList.remove('hidden');
+                    narrationPhase.classList.add('fade-in');
+                    narrationPhase.style.opacity = '1';
+                    startNarration();
+                }, 600);
+            } catch (e) {
+                console.error('Error starting narration:', e);
+            }
+        });
+
+        // Handle back button click
+        backBtn.addEventListener('click', () => {
+            try {
+                console.log('Returning to text output');
+                stopNarration();
+                narrationPhase.classList.add('fade-out');
+                setTimeout(() => {
+                    narrationPhase.classList.add('hidden');
+                    textOutputPhase.classList.remove('hidden');
+                    textOutputPhase.classList.remove('fade-out');
+                    textOutputPhase.classList.add('fade-in');
+                    textOutputPhase.style.opacity = '1';
+                }, 600);
+            } catch (e) {
+                console.error('Error returning to text output:', e);
+            }
+        });
+
+        // Handle pause button
+        pauseBtn.addEventListener('click', () => {
+            try {
+                isPaused = !isPaused;
+                const icon = pauseBtn.querySelector('.material-symbols-outlined');
+                if (isPaused) {
+                    icon.textContent = 'play_arrow';
+                    clearInterval(subtitleInterval);
+                    clearInterval(timerInterval);
+                } else {
+                    icon.textContent = 'pause';
+                    showNextSubtitle();
+                    subtitleInterval = setInterval(showNextSubtitle, 3000);
+                    startTimer();
+                }
+            } catch (e) {
+                console.error('Error toggling pause:', e);
+            }
+        });
+
+        // Handle new narrative button
+        newNarrativeBtn.addEventListener('click', () => {
+            try {
+                console.log('Navigating to index.html');
+                document.body.classList.add('fade-out');
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 600);
+            } catch (e) {
+                console.error('Error navigating to index.html:', e);
+            }
+        });
+
+        // Copy text functionality
+        document.getElementById('copyBtn').addEventListener('click', () => {
+            try {
+                const text = subtitles.join(' ');
+                navigator.clipboard.writeText(text).then(() => {
+                    alert('Text copied to clipboard!');
+                }).catch(e => console.error('Copy failed:', e));
+            } catch (e) {
+                console.error('Error copying text:', e);
+            }
+        });
+
+        // Export functionality
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            try {
+                const text = subtitles.join('\n');
+                const blob = new Blob([text], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'narrative.txt';
+                a.click();
+                URL.revokeObjectURL(url);
+                alert('Narrative exported as narrative.txt');
+            } catch (e) {
+                console.error('Error exporting:', e);
+                alert('Failed to export narrative.');
+            }
+        });
+
+        function startNarration() {
+            subtitleIndex = 0;
+            currentTime = 0;
+            isPaused = false;
+            showNextSubtitle();
+            subtitleInterval = setInterval(showNextSubtitle, 3000);
+            startTimer();
+        }
+
+        function showNextSubtitle() {
+            if (subtitleIndex < subtitles.length) {
+                subtitleText.style.animation = 'none';
+                setTimeout(() => {
+                    subtitleText.textContent = subtitles[subtitleIndex];
+                    subtitleText.style.animation = 'subtitleFade 3s ease-in-out, textGlow 1.5s ease-in-out infinite';
+                    subtitleIndex++;
+                }, 10);
+            } else {
+                stopNarration();
+            }
+        }
+
+        function stopNarration() {
+            clearInterval(subtitleInterval);
+            clearInterval(timerInterval);
+            subtitleText.textContent = '';
+            currentTime = 0;
+            currentTimeEl.textContent = formatTime(currentTime);
+        }
+
+        function startTimer() {
+            timerInterval = setInterval(() => {
+                if (!isPaused) {
+                    currentTime += 0.1;
+                    currentTimeEl.textContent = formatTime(currentTime);
+                    if (currentTime >= totalDuration) {
+                        stopNarration();
+                    }
+                }
+            }, 100);
+        }
+    </script>
+</body>
+</html>
