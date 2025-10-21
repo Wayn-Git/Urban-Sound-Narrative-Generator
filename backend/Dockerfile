@@ -15,7 +15,3 @@ COPY . .
 
 # Expose port
 EXPOSE 10000
-
-# Start FastAPI - Use PORT from environment
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000}
-```
