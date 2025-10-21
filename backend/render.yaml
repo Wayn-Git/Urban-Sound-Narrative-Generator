@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: urban-audio-api
+    runtime: docker
+    env: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
