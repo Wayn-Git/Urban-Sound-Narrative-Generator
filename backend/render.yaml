@@ -3,9 +3,12 @@ services:
     name: urban-audio-api
     runtime: docker
     env: docker
+    rootDir: backend
     dockerfilePath: ./Dockerfile
     envVars:
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: GROQ_API_KEY
         sync: false
+      - key: PORT
+        value: 10000
