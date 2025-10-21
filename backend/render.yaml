@@ -6,9 +6,12 @@ services:
     region: oregon
     rootDir: backend
     dockerfilePath: ./Dockerfile
-    dockerContext: ./
+    dockerContext: ./backend
+    dockerCommand: uvicorn main:app --host 0.0.0.0 --port 10000
     envVars:
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: GROQ_API_KEY
         sync: false
+      - key: PORT
+        value: 10000
