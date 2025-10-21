@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import torch
 import torchaudio
@@ -24,7 +25,7 @@ app = FastAPI()
 # CORS for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://your-frontend.vercel.app"],  # Update with your Vercel URL
+    allow_origins=["*"],  # Update with your specific frontend URL in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
@@ -37,10 +38,11 @@ class AudioResponse(BaseModel):
 
 # Initialize models
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-panns_model = AudioTagging(checkpoint_path=None, device=device)
-whisper_model = whisper.load_model("base", device=device)
+panns_model = None
+whisper_model = None
 
-def process_audio(audio_path: str):
+def process_audio_file(audio_path: str):
+    """Process audio file and generate narration"""
     # Load and prepare audio
     waveform, sr = torchaudio.load(audio_path)
     if sr != 32000:
@@ -76,7 +78,7 @@ def process_audio(audio_path: str):
     narration = response.choices[0].message.content
 
     # Convert to speech with ElevenLabs
-    url = "https://api.elevenlabs.io/v1/text-to-speech/cgSgspJ2msm6clMCkdW9"  # Jessica voice
+    url = "https://api.elevenlabs.io/v1/text-to-speech/cgSgspJ2msm6clMCkdW9"
     headers = {
         "xi-api-key": ELEVENLABS_API_KEY,
         "Content-Type": "application/json",
@@ -84,9 +86,9 @@ def process_audio(audio_path: str):
     }
     payload = {
         "text": narration,
-        "model_id": "eleven_multilingual_v2",  # Fallback due to eleven_v3 issues
+        "model_id": "eleven_multilingual_v2",
         "voice_settings": {
-            "stability": 0.0,  # Creative mode for emotions
+            "stability": 0.0,
             "similarity_boost": 0.85,
             "style": 0.6,
             "use_speaker_boost": True
@@ -115,12 +117,14 @@ def process_audio(audio_path: str):
 
 @app.on_event("startup")
 async def load_models():
+    """Load models on startup"""
     global panns_model, whisper_model
     panns_model = AudioTagging(checkpoint_path=None, device='cpu')
     whisper_model = whisper.load_model("base", device='cpu')
 
 @app.post("/process-audio", response_model=AudioResponse)
-async def process_audio(file: UploadFile = File(...)):
+async def process_audio_endpoint(file: UploadFile = File(...)):
+    """Process uploaded audio file"""
     # Validate file
     if not file.filename.endswith((".mp3", ".wav")):
         raise HTTPException(status_code=400, detail="Only MP3 or WAV files allowed")
@@ -133,10 +137,16 @@ async def process_audio(file: UploadFile = File(...)):
     
     # Process audio
     try:
-        narration, output_path = process_audio(audio_path)
+        narration, output_path = process_audio_file(audio_path)
         return AudioResponse(narration=narration, audio_path=output_path)
     finally:
-        Path(audio_path).unlink(missing_ok=True)  # Clean up uploaded file
+        Path(audio_path).unlink(missing_ok=True)
+
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {"status": "healthy", "message": "Urban Sound Narrative API"}
 
 # Serve audio files
+os.makedirs("audio", exist_ok=True)
 app.mount("/audio", StaticFiles(directory="audio"), name="audio")
