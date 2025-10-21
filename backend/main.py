@@ -112,6 +112,13 @@ def process_audio(audio_path: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"TTS failed: {str(e)}")
 
+
+@app.on_event("startup")
+async def load_models():
+    global panns_model, whisper_model
+    panns_model = AudioTagging(checkpoint_path=None, device='cpu')
+    whisper_model = whisper.load_model("base", device='cpu')
+
 @app.post("/process-audio", response_model=AudioResponse)
 async def process_audio(file: UploadFile = File(...)):
     # Validate file
