@@ -1,2 +1,12 @@
-pip install fastapi uvicorn python-dotenv panns-inference openai-whisper torch torchaudio groq librosa numpy requests pydub
-pip freeze > requirements.txt
+fastapi==0.115.4
+uvicorn[standard]==0.32.0
+python-dotenv==1.0.1
+panns-inference==0.1.1
+openai-whisper==20240930
+torch==2.4.1
+torchaudio==2.4.1
+groq==0.11.0
+librosa==0.10.2.post1
+numpy==1.26.4
+requests==2.32.3
+pydub==0.25.1
