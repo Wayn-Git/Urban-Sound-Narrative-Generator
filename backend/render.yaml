@@ -1,17 +1,18 @@
+# render.yaml
 services:
   - type: web
-    name: urban-audio-api
-    runtime: docker
-    plan: free
-    region: oregon
-    rootDir: backend
-    dockerfilePath: ./Dockerfile
-    dockerContext: ./backend
-    dockerCommand: uvicorn main:app --host 0.0.0.0 --port 10000
+    name: urban-sound-narrative-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: ELEVENLABS_API_KEY
-        sync: false
+      - key: PYTHON_VERSION
+        value: 3.12.0
       - key: GROQ_API_KEY
         sync: false
-      - key: PORT
-        value: 10000
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+    healthCheckPath: /health
+    autoDeploy: true
