@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-
-const API_URL = "https://d2b1131ccd5b.ngrok-free.app"; // Update this!
+const API_URL = "https://63cc04e7c07b.ngrok-free.app"; // Updated ngrok URL
 
 function AudioProcessor() {
   const [file, setFile] = useState(null);
@@ -14,7 +13,6 @@ function AudioProcessor() {
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
 
-  // Processing stages with fun messages
   const processingStages = [
     { message: "🎧 Analyzing your audio...", duration: 2000 },
     { message: "🔊 Extracting sound patterns...", duration: 2500 },
@@ -35,8 +33,6 @@ function AudioProcessor() {
   useEffect(() => {
     if (loading) {
       let currentStage = 0;
-      
-      // Simulate sound detection
       const soundInterval = setInterval(() => {
         if (detectedSounds.length < 5) {
           const randomSound = possibleSounds[Math.floor(Math.random() * possibleSounds.length)];
@@ -45,8 +41,6 @@ function AudioProcessor() {
           }
         }
       }, 1500);
-
-      // Progress through stages
       const progressStages = () => {
         if (currentStage < processingStages.length) {
           setProcessingStage(processingStages[currentStage].message);
@@ -54,9 +48,7 @@ function AudioProcessor() {
           setTimeout(progressStages, processingStages[currentStage - 1]?.duration || 2000);
         }
       };
-
       progressStages();
-
       return () => {
         clearInterval(soundInterval);
       };
@@ -87,22 +79,18 @@ function AudioProcessor() {
       setError('Please select a file first');
       return;
     }
-
     setLoading(true);
     setError('');
     setNarration('');
     setAudioUrl('');
-
     const formData = new FormData();
     formData.append('file', file);
-
     try {
       const response = await axios.post(`${API_URL}/process-audio`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
-
       setNarration(response.data.narration);
       setAudioUrl(`${API_URL}${response.data.audio_url}`);
     } catch (err) {
@@ -124,7 +112,7 @@ function AudioProcessor() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 py-12 px-4 sm:px-6 navigation">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-10">
@@ -135,10 +123,8 @@ function AudioProcessor() {
             Transform city sounds into vivid narratives
           </p>
         </div>
-
         {/* Main Card */}
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
-          
           {/* Upload Section */}
           {!loading && !narration && (
             <div className="p-8">
@@ -148,7 +134,6 @@ function AudioProcessor() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                   </svg>
                 </div>
-                
                 <label className="cursor-pointer">
                   <span className="mt-2 block text-sm font-medium text-gray-700">
                     {fileName || 'Choose an audio file to begin'}
@@ -163,16 +148,13 @@ function AudioProcessor() {
                     Browse Files
                   </span>
                 </label>
-                
                 <p className="mt-4 text-xs text-gray-500">MP3 or WAV (Max 10MB)</p>
               </div>
-
               {error && (
                 <div className="mt-6 bg-red-50 border-l-4 border-red-500 p-4 rounded">
                   <p className="text-red-700 font-medium">{error}</p>
                 </div>
               )}
-
               {file && !error && (
                 <div className="mt-8">
                   <button
@@ -185,7 +167,6 @@ function AudioProcessor() {
               )}
             </div>
           )}
-
           {/* Processing Section */}
           {loading && (
             <div className="p-8 bg-gradient-to-br from-indigo-50 to-purple-50">
@@ -200,15 +181,11 @@ function AudioProcessor() {
                   Processing Your Audio...
                 </h2>
               </div>
-
-              {/* Current Stage */}
               <div className="mb-8 text-center">
                 <p className="text-lg font-semibold text-indigo-600 animate-pulse">
                   {processingStage}
                 </p>
               </div>
-
-              {/* Detected Sounds */}
               {detectedSounds.length > 0 && (
                 <div className="bg-white rounded-xl p-6 shadow-lg">
                   <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
@@ -228,8 +205,6 @@ function AudioProcessor() {
                   </div>
                 </div>
               )}
-
-              {/* Fun Facts */}
               <div className="mt-6 bg-purple-100 rounded-xl p-4 text-center">
                 <p className="text-sm text-purple-800">
                   💡 <strong>Did you know?</strong> Our AI can identify over 500 different urban sounds!
@@ -237,7 +212,6 @@ function AudioProcessor() {
               </div>
             </div>
           )}
-
           {/* Results Section */}
           {narration && audioUrl && !loading && (
             <div className="p-8 space-y-6">
@@ -247,8 +221,6 @@ function AudioProcessor() {
                 </h2>
                 <p className="text-gray-600">Here's what we created from your audio</p>
               </div>
-
-              {/* Narration Text */}
               <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200 rounded-xl p-6 shadow-lg">
                 <div className="flex items-start mb-3">
                   <span className="text-2xl mr-3">📝</span>
@@ -258,14 +230,11 @@ function AudioProcessor() {
                   "{narration}"
                 </p>
               </div>
-
-              {/* Audio Player */}
-              <div className="bg-white border-2 border-gray-200 rounded-xl p-6 shadow-lg">
+              <div className="bg-white армянский border-2 border-gray-200 rounded-xl p-6 shadow-lg">
                 <div className="flex items-start mb-4">
                   <span className="text-2xl mr-3">🎙️</span>
                   <h3 className="text-xl font-semibold text-gray-900">Audio Narration</h3>
                 </div>
-                
                 <audio
                   controls
                   src={audioUrl}
@@ -274,7 +243,6 @@ function AudioProcessor() {
                 >
                   Your browser does not support the audio element.
                 </audio>
-
                 <div className="flex gap-3">
                   <a
                     href={audioUrl}
@@ -291,8 +259,6 @@ function AudioProcessor() {
                   </button>
                 </div>
               </div>
-
-              {/* Share Section */}
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-center">
                 <p className="text-sm text-yellow-800">
                   🎉 Love what you created? Share your urban narrative with the world!
@@ -301,15 +267,11 @@ function AudioProcessor() {
             </div>
           )}
         </div>
-
-        {/* Footer */}
         <div className="mt-8 text-center text-gray-600 text-sm">
           <p>Powered by AI • Whisper • Groq • ElevenLabs</p>
         </div>
       </div>
-
-      {/* Custom CSS for animations */}
-      <style jsx>{`
+      <style>{`
         @keyframes fade-in {
           from {
             opacity: 0;
