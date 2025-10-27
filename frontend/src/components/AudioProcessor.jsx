@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Upload, Play, Pause, Copy, Download, ArrowRight, ArrowLeft, Sparkles, Loader2, Music2, Car, FootprintsIcon as Footprints, Bell, Bus } from 'lucide-react';
+import { Mic, Upload, Play, Pause, Copy, Download, ArrowRight, ArrowLeft, Sparkles, Loader2, Music2, Car, FootprintsIcon as Footprints, Bell, Bus, ChevronDown, ChevronUp, Code } from 'lucide-react';
+
+const API_URL = "http://localhost:8000"; // Update this to your backend URL
 
 function SoundNarrativeGenerator() {
   const [phase, setPhase] = useState('upload');
@@ -9,72 +11,34 @@ function SoundNarrativeGenerator() {
   const [isPaused, setIsPaused] = useState(false);
   const [currentSubtitle, setCurrentSubtitle] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [narration, setNarration] = useState('');
+  const [audioUrl, setAudioUrl] = useState('');
+  const [detectedSounds, setDetectedSounds] = useState([]);
+  const [transcript, setTranscript] = useState('');
+  const [processingMessage, setProcessingMessage] = useState('');
+  const [error, setError] = useState('');
+  const [showProcessingDetails, setShowProcessingDetails] = useState(false);
+  const [processingLogs, setProcessingLogs] = useState([]);
   const fileInputRef = useRef(null);
+  const audioRef = useRef(null);
 
-  const processingStage = "Generating Narrative";
-  
-  const soundIcons = [
-    { Icon: Car, label: "Vehicles" },
-    { Icon: Footprints, label: "Footsteps" },
-    { Icon: Bell, label: "Siren" },
-    { Icon: Bus, label: "Bus" }
-  ];
-
-  const subtitles = [
-    "The sharp blare of a car horn cut through the rhythmic tap-tap of footsteps on wet pavement.",
-    "In the distance, a siren wailed, a lonely cry in the concrete jungle.",
-    "The city breathed around them—alive, restless, never truly silent.",
-    "A bus hissed to a stop nearby, its doors opening with a mechanical sigh.",
-    "Conversations bubbled up and faded away, fragments of lives intersecting for mere seconds."
-  ];
-
-  const narrativeText = `The sharp blare of a car horn cut through the rhythmic tap-tap of footsteps on wet pavement. In the distance, a siren wailed, a lonely cry in the concrete jungle. The city breathed around them—alive, restless, never truly silent.
-
-A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Conversations bubbled up and faded away, fragments of lives intersecting for mere seconds before diverging again into the urban sprawl.`;
-
-  const totalDuration = subtitles.length * 3;
+  const totalDuration = 15; // Will be updated with actual audio duration
 
   useEffect(() => {
-    if (phase === 'processing') {
-      const timer = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 100) {
-            clearInterval(timer);
-            setTimeout(() => setPhase('textOutput'), 600);
-            return 100;
-          }
-          return prev + 2.5;
-        });
-      }, 100);
-      return () => clearInterval(timer);
-    }
-  }, [phase]);
+    if (phase === 'narration' && !isPaused && audioRef.current) {
+      const audio = audioRef.current;
+      
+      const updateTime = () => {
+        setCurrentTime(audio.currentTime);
+        const subtitleIndex = Math.floor(audio.currentTime / 3);
+        setCurrentSubtitle(Math.min(subtitleIndex, narration.split('. ').length - 1));
+      };
 
-  useEffect(() => {
-    if (phase === 'narration' && !isPaused) {
-      const subtitleTimer = setInterval(() => {
-        setCurrentSubtitle(prev => {
-          if (prev >= subtitles.length - 1) {
-            clearInterval(subtitleTimer);
-            return prev;
-          }
-          return prev + 1;
-        });
-      }, 3000);
-
-      const timeTimer = setInterval(() => {
-        setCurrentTime(prev => {
-          if (prev >= totalDuration) {
-            clearInterval(timeTimer);
-            return totalDuration;
-          }
-          return prev + 0.1;
-        });
-      }, 100);
+      audio.addEventListener('timeupdate', updateTime);
+      audio.play().catch(err => console.error('Audio play error:', err));
 
       return () => {
-        clearInterval(subtitleTimer);
-        clearInterval(timeTimer);
+        audio.removeEventListener('timeupdate', updateTime);
       };
     }
   }, [phase, isPaused]);
@@ -82,14 +46,122 @@ A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Convers
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     if (selectedFile) {
+      if (!selectedFile.name.endsWith('.mp3') && !selectedFile.name.endsWith('.wav')) {
+        setError('Please select an MP3 or WAV file');
+        return;
+      }
       setFile(selectedFile);
       setFileName(selectedFile.name);
+      setError('');
     }
   };
 
-  const handleGenerate = () => {
+  const addProcessingLog = (message) => {
+    setProcessingLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+  };
+
+  const handleGenerate = async () => {
+    if (!file) {
+      setError('Please select a file first');
+      return;
+    }
+
     setPhase('processing');
     setProgress(0);
+    setError('');
+    setDetectedSounds([]);
+    setProcessingLogs([]);
+    
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      addProcessingLog('Initializing audio processing pipeline...');
+      const response = await fetch(`${API_URL}/process-audio-stream`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n').filter(line => line.trim());
+
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line);
+            
+            setProgress(data.progress || 0);
+            setProcessingMessage(data.message || '');
+            
+            // Add processing logs
+            if (data.stage === 'loading') {
+              addProcessingLog('Loading audio file and validating format...');
+              addProcessingLog('Resampling audio to 32kHz mono channel...');
+            } else if (data.stage === 'extracting') {
+              addProcessingLog('Running PANNs audio tagging model...');
+              addProcessingLog('Extracting acoustic features from waveform...');
+              addProcessingLog('Computing mel spectrograms...');
+            } else if (data.stage === 'identifying') {
+              addProcessingLog('Analyzing frequency patterns...');
+              addProcessingLog('Classifying sound events...');
+            } else if (data.stage === 'sounds_detected') {
+              addProcessingLog(`Detected ${data.sounds.length} distinct sound classes`);
+              data.sounds.forEach(sound => addProcessingLog(`  → ${sound}`));
+            } else if (data.stage === 'transcribing') {
+              addProcessingLog('Loading Whisper speech recognition model...');
+              addProcessingLog('Transcribing audio content...');
+            } else if (data.stage === 'ai_processing') {
+              addProcessingLog('Connecting to Groq LLM API...');
+              addProcessingLog('Generating narrative with Llama 3.3 70B...');
+              addProcessingLog('Applying creative writing parameters...');
+            } else if (data.stage === 'voice_generation') {
+              addProcessingLog('Connecting to ElevenLabs TTS API...');
+              addProcessingLog('Synthesizing voice narration...');
+              addProcessingLog('Applying voice modulation and effects...');
+            } else if (data.stage === 'finalizing') {
+              addProcessingLog('Normalizing audio levels...');
+              addProcessingLog('Encoding to MP3 format...');
+              addProcessingLog('Optimizing bitrate to 192kbps...');
+            }
+            
+            if (data.sounds && data.sounds.length > 0) {
+              setDetectedSounds(data.sounds);
+            }
+            
+            if (data.stage === 'complete') {
+              setNarration(data.narration);
+              setAudioUrl(`${API_URL}${data.audio_url}`);
+              setTranscript(data.transcript);
+              addProcessingLog('Processing complete! Audio ready for playback.');
+              setTimeout(() => setPhase('textOutput'), 600);
+            }
+            
+            if (data.stage === 'error') {
+              setError(data.message);
+              addProcessingLog(`ERROR: ${data.message}`);
+              setPhase('upload');
+            }
+          } catch (e) {
+            console.error('Error parsing JSON:', e, line);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error:', err);
+      setError(err.message || 'An error occurred while processing the audio');
+      addProcessingLog(`FATAL ERROR: ${err.message}`);
+      setPhase('upload');
+    }
   };
 
   const formatTime = (sec) => {
@@ -99,12 +171,12 @@ A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Convers
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(narrativeText);
+    navigator.clipboard.writeText(narration);
     alert('Text copied to clipboard!');
   };
 
   const handleExport = () => {
-    const blob = new Blob([narrativeText], { type: 'text/plain' });
+    const blob = new Blob([narration], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -112,6 +184,22 @@ A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Convers
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  const getSoundIcon = (soundLabel) => {
+    const lowerLabel = soundLabel.toLowerCase();
+    if (lowerLabel.includes('car') || lowerLabel.includes('vehicle') || lowerLabel.includes('traffic')) {
+      return Car;
+    } else if (lowerLabel.includes('foot') || lowerLabel.includes('walk')) {
+      return Footprints;
+    } else if (lowerLabel.includes('bell') || lowerLabel.includes('siren') || lowerLabel.includes('alarm')) {
+      return Bell;
+    } else if (lowerLabel.includes('bus')) {
+      return Bus;
+    }
+    return Music2;
+  };
+
+  const narrativeSentences = narration ? narration.split(/[.!?]+/).filter(s => s.trim()) : [];
 
   return (
     <div className="min-h-screen bg-black text-white relative overflow-hidden" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }}>
@@ -143,6 +231,11 @@ A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Convers
               setFileName('');
               setCurrentSubtitle(0);
               setCurrentTime(0);
+              setError('');
+              setNarration('');
+              setAudioUrl('');
+              setDetectedSounds([]);
+              setProcessingLogs([]);
             }}
             className="group flex items-center gap-2 h-9 px-4 rounded-lg bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-200"
           >
@@ -229,8 +322,17 @@ A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Convers
                 />
               </div>
 
+              {/* Error Display */}
+              {error && (
+                <div className="mb-8 max-w-2xl mx-auto">
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-center">
+                    <p className="text-red-400 text-sm font-medium">{error}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Generate Button */}
-              {file && (
+              {file && !error && (
                 <div className="flex justify-center mb-14 animate-fade-in">
                   <button
                     onClick={handleGenerate}
@@ -285,7 +387,7 @@ A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Convers
                         <div className="w-2.5 h-2.5 rounded-full bg-white/80 relative" />
                       </div>
                       <h2 className="text-2xl font-bold text-white/90">
-                        {processingStage}
+                        Generating Narrative
                       </h2>
                       <Loader2 className="w-6 h-6 text-white/60 animate-spin-slow" strokeWidth={2} />
                     </div>
@@ -293,31 +395,74 @@ A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Convers
                     <div className="mb-3">
                       <div className="h-1.5 w-full max-w-lg mx-auto rounded-full bg-white/[0.06] overflow-hidden">
                         <div
-                          className="h-full rounded-full bg-white/80 transition-all duration-100"
+                          className="h-full rounded-full bg-white/80 transition-all duration-300"
                           style={{ width: `${progress}%` }}
                         />
                       </div>
                     </div>
-                    <p className="text-sm text-white/40 font-medium">{Math.round(progress)}% Complete</p>
+                    <p className="text-sm text-white/40 font-medium mb-2">{Math.round(progress)}% Complete</p>
+                    <p className="text-sm text-white/60 font-medium animate-pulse">{processingMessage}</p>
                   </div>
 
                   <div className="text-center">
-                    <p className="text-sm text-white/50 mb-6 font-medium">Analyzing Audio Patterns</p>
-                    <div className="flex flex-wrap gap-3 sm:gap-4 justify-center">
-                      {soundIcons.map((sound, i) => {
-                        const IconComponent = sound.Icon;
-                        return (
-                          <div
-                            key={i}
-                            className="flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-white/[0.06] border border-white/[0.08] backdrop-blur-xl animate-scale-in"
-                            style={{ animationDelay: `${i * 0.15}s` }}
-                          >
-                            <IconComponent className="w-5 h-5 text-white/70" strokeWidth={2} />
-                            <span className="text-sm font-medium text-white/80">{sound.label}</span>
+                    <p className="text-sm text-white/50 mb-6 font-medium">
+                      {detectedSounds.length > 0 ? 'Detected Sounds' : 'Analyzing Audio Patterns'}
+                    </p>
+                    {detectedSounds.length > 0 ? (
+                      <div className="flex flex-wrap gap-3 sm:gap-4 justify-center mb-6">
+                        {detectedSounds.map((sound, i) => {
+                          const IconComponent = getSoundIcon(sound);
+                          return (
+                            <div
+                              key={i}
+                              className="flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-white/[0.06] border border-white/[0.08] backdrop-blur-xl animate-scale-in"
+                              style={{ animationDelay: `${i * 0.1}s` }}
+                            >
+                              <IconComponent className="w-5 h-5 text-white/70" strokeWidth={2} />
+                              <span className="text-sm font-medium text-white/80">{sound}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center gap-2 mb-6">
+                        <div className="w-2 h-2 rounded-full bg-white/40 animate-pulse" style={{ animationDelay: '0s' }} />
+                        <div className="w-2 h-2 rounded-full bg-white/40 animate-pulse" style={{ animationDelay: '0.2s' }} />
+                        <div className="w-2 h-2 rounded-full bg-white/40 animate-pulse" style={{ animationDelay: '0.4s' }} />
+                      </div>
+                    )}
+
+                    {/* Processing Details Toggle */}
+                    {processingLogs.length > 0 && (
+                      <div className="mt-8">
+                        <button
+                          onClick={() => setShowProcessingDetails(!showProcessingDetails)}
+                          className="group flex items-center gap-2 mx-auto px-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.08] transition-all duration-200"
+                        >
+                          <Code className="w-4 h-4 text-white/60" strokeWidth={2} />
+                          <span className="text-xs font-medium text-white/60">
+                            {showProcessingDetails ? 'Hide' : 'View'} Processing Details
+                          </span>
+                          {showProcessingDetails ? (
+                            <ChevronUp className="w-4 h-4 text-white/60" strokeWidth={2} />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-white/60" strokeWidth={2} />
+                          )}
+                        </button>
+
+                        {showProcessingDetails && (
+                          <div className="mt-4 max-h-64 overflow-y-auto bg-black/40 backdrop-blur-sm border border-white/[0.06] rounded-xl p-4 text-left animate-fade-in">
+                            <div className="font-mono text-xs space-y-1">
+                              {processingLogs.map((log, i) => (
+                                <div key={i} className="text-white/50 leading-relaxed">
+                                  {log}
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        );
-                      })}
-                    </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -336,14 +481,14 @@ A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Convers
                       <span className="text-xs font-semibold text-white/70">Generation Complete</span>
                     </div>
                     <h2 className="text-2xl sm:text-3xl font-bold mb-2 text-white/95">Your Narrative</h2>
+                    {transcript && transcript !== '(no speech)' && (
+                      <p className="text-sm text-white/40 italic mt-2">Transcript: "{transcript}"</p>
+                    )}
                   </div>
                   
                   <div className="max-w-3xl mx-auto mb-10 bg-white/[0.03] rounded-2xl p-6 sm:p-8 border border-white/[0.06]">
-                    <p className="text-base sm:text-lg leading-relaxed text-white/75 mb-6">
-                      {narrativeText.split('\n\n')[0]}
-                    </p>
                     <p className="text-base sm:text-lg leading-relaxed text-white/75">
-                      {narrativeText.split('\n\n')[1]}
+                      {narration}
                     </p>
                   </div>
                   
@@ -353,6 +498,7 @@ A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Convers
                         setPhase('narration');
                         setCurrentSubtitle(0);
                         setCurrentTime(0);
+                        setIsPaused(false);
                       }}
                       className="group flex items-center gap-3 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white text-black hover:bg-white/95 transition-all duration-300 hover:scale-105"
                     >
@@ -395,7 +541,7 @@ A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Convers
                     <p className="text-base text-white/50 font-mono">
                       <span className="text-white/70">{formatTime(currentTime)}</span>
                       <span className="mx-2 text-white/30">/</span>
-                      <span>{formatTime(totalDuration)}</span>
+                      <span>{formatTime(audioRef.current?.duration || totalDuration)}</span>
                     </p>
                   </div>
 
@@ -405,7 +551,8 @@ A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Convers
                     <div className="relative flex h-32 sm:h-40 items-end justify-center gap-0.5 sm:gap-1">
                       {[...Array(window.innerWidth < 640 ? 25 : 35)].map((_, i) => {
                         const totalBars = window.innerWidth < 640 ? 25 : 35;
-                        const progressPercent = (currentTime / totalDuration) * 100;
+                        const audioDuration = audioRef.current?.duration || totalDuration;
+                        const progressPercent = (currentTime / audioDuration) * 100;
                         const barPosition = (i / totalBars) * 100;
                         const isPastProgress = barPosition <= progressPercent;
                         const randomHeight = `${Math.random() * 60 + 20}%`;
@@ -430,14 +577,35 @@ A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Convers
                   {/* Subtitle Display */}
                   <div className="min-h-24 sm:min-h-28 flex items-center justify-center mb-10 px-4">
                     <p className="text-lg sm:text-xl lg:text-2xl leading-relaxed text-center max-w-3xl font-medium text-white/85 animate-pulse-subtle">
-                      {subtitles[currentSubtitle]}
+                      {narrativeSentences[currentSubtitle] || narration}
                     </p>
                   </div>
+
+                  {/* Hidden Audio Element */}
+                  <audio
+                    ref={audioRef}
+                    src={audioUrl}
+                    onEnded={() => {
+                      setIsPaused(true);
+                      setCurrentTime(0);
+                      setCurrentSubtitle(0);
+                    }}
+                    className="hidden"
+                  />
 
                   {/* Enhanced Controls */}
                   <div className="flex flex-wrap gap-3 sm:gap-4 justify-center">
                     <button
-                      onClick={() => setIsPaused(!isPaused)}
+                      onClick={() => {
+                        if (audioRef.current) {
+                          if (isPaused) {
+                            audioRef.current.play();
+                          } else {
+                            audioRef.current.pause();
+                          }
+                          setIsPaused(!isPaused);
+                        }
+                      }}
                       className="group relative flex h-14 sm:h-16 w-14 sm:w-16 items-center justify-center rounded-2xl bg-white text-black hover:bg-white/95 transition-all duration-300 hover:scale-110"
                     >
                       {isPaused ? (
@@ -448,9 +616,14 @@ A bus hissed to a stop nearby, its doors opening with a mechanical sigh. Convers
                     </button>
                     <button
                       onClick={() => {
+                        if (audioRef.current) {
+                          audioRef.current.pause();
+                          audioRef.current.currentTime = 0;
+                        }
                         setPhase('textOutput');
                         setCurrentSubtitle(0);
                         setCurrentTime(0);
+                        setIsPaused(false);
                       }}
                       className="flex items-center gap-3 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90"
                     >
