@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Upload, Play, Pause, Copy, Download, ArrowRight, ArrowLeft, Sparkles, Loader2, Music2, Car, FootprintsIcon as Footprints, Bell, Bus, ChevronDown, ChevronUp, Code } from 'lucide-react';
+import { Mic, Upload, Play, Pause, Copy, Download, ArrowRight, ArrowLeft, Sparkles, Loader2, Music2, Car, FootprintsIcon as Footprints, Bell, Bus, ChevronDown, ChevronUp, Code, StopCircle } from 'lucide-react';
 
-const API_URL = "http://localhost:8000"; // Update this to your backend URL
+const API_URL = "https://23164f15b510.ngrok-free.app";
 
 function SoundNarrativeGenerator() {
   const [phase, setPhase] = useState('upload');
@@ -19,10 +19,14 @@ function SoundNarrativeGenerator() {
   const [error, setError] = useState('');
   const [showProcessingDetails, setShowProcessingDetails] = useState(false);
   const [processingLogs, setProcessingLogs] = useState([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  
   const fileInputRef = useRef(null);
   const audioRef = useRef(null);
-
-  const totalDuration = 15; // Will be updated with actual audio duration
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
 
   useEffect(() => {
     if (phase === 'narration' && !isPaused && audioRef.current) {
@@ -30,8 +34,12 @@ function SoundNarrativeGenerator() {
       
       const updateTime = () => {
         setCurrentTime(audio.currentTime);
-        const subtitleIndex = Math.floor(audio.currentTime / 3);
-        setCurrentSubtitle(Math.min(subtitleIndex, narration.split('. ').length - 1));
+        const sentences = narration.split(/[.!?]+/).filter(s => s.trim());
+        if (sentences.length > 0 && audio.duration) {
+          const timePerSentence = audio.duration / sentences.length;
+          const subtitleIndex = Math.floor(audio.currentTime / timePerSentence);
+          setCurrentSubtitle(Math.min(subtitleIndex, sentences.length - 1));
+        }
       };
 
       audio.addEventListener('timeupdate', updateTime);
@@ -41,7 +49,25 @@ function SoundNarrativeGenerator() {
         audio.removeEventListener('timeupdate', updateTime);
       };
     }
-  }, [phase, isPaused]);
+  }, [phase, isPaused, narration]);
+
+  useEffect(() => {
+    if (isRecording) {
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+      setRecordingTime(0);
+    }
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+    };
+  }, [isRecording]);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -56,13 +82,50 @@ function SoundNarrativeGenerator() {
     }
   };
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        const recordedFile = new File([audioBlob], `recording_${Date.now()}.wav`, { type: 'audio/wav' });
+        setFile(recordedFile);
+        setFileName(recordedFile.name);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setError('');
+    } catch (err) {
+      console.error('Error accessing microphone:', err);
+      setError('Could not access microphone. Please check permissions.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
   const addProcessingLog = (message) => {
     setProcessingLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
   };
 
   const handleGenerate = async () => {
     if (!file) {
-      setError('Please select a file first');
+      setError('Please select a file or record audio first');
       return;
     }
 
@@ -71,6 +134,7 @@ function SoundNarrativeGenerator() {
     setError('');
     setDetectedSounds([]);
     setProcessingLogs([]);
+    setProcessingMessage('');
     
     const formData = new FormData();
     formData.append('file', file);
@@ -83,7 +147,8 @@ function SoundNarrativeGenerator() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`Server error (${response.status}): ${errorText}`);
       }
 
       const reader = response.body.getReader();
@@ -103,14 +168,12 @@ function SoundNarrativeGenerator() {
             setProgress(data.progress || 0);
             setProcessingMessage(data.message || '');
             
-            // Add processing logs
             if (data.stage === 'loading') {
               addProcessingLog('Loading audio file and validating format...');
               addProcessingLog('Resampling audio to 32kHz mono channel...');
             } else if (data.stage === 'extracting') {
               addProcessingLog('Running PANNs audio tagging model...');
               addProcessingLog('Extracting acoustic features from waveform...');
-              addProcessingLog('Computing mel spectrograms...');
             } else if (data.stage === 'identifying') {
               addProcessingLog('Analyzing frequency patterns...');
               addProcessingLog('Classifying sound events...');
@@ -123,15 +186,12 @@ function SoundNarrativeGenerator() {
             } else if (data.stage === 'ai_processing') {
               addProcessingLog('Connecting to Groq LLM API...');
               addProcessingLog('Generating narrative with Llama 3.3 70B...');
-              addProcessingLog('Applying creative writing parameters...');
             } else if (data.stage === 'voice_generation') {
               addProcessingLog('Connecting to ElevenLabs TTS API...');
               addProcessingLog('Synthesizing voice narration...');
-              addProcessingLog('Applying voice modulation and effects...');
             } else if (data.stage === 'finalizing') {
               addProcessingLog('Normalizing audio levels...');
               addProcessingLog('Encoding to MP3 format...');
-              addProcessingLog('Optimizing bitrate to 192kbps...');
             }
             
             if (data.sounds && data.sounds.length > 0) {
@@ -170,9 +230,23 @@ function SoundNarrativeGenerator() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
+  const formatRecordingTime = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
   const handleCopy = () => {
     navigator.clipboard.writeText(narration);
-    alert('Text copied to clipboard!');
+    const originalText = 'Copy';
+    const button = event.target.closest('button');
+    const span = button.querySelector('span');
+    if (span) {
+      span.textContent = 'Copied!';
+      setTimeout(() => {
+        span.textContent = originalText;
+      }, 2000);
+    }
   };
 
   const handleExport = () => {
@@ -183,6 +257,36 @@ function SoundNarrativeGenerator() {
     a.download = 'narrative.txt';
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadAudio = () => {
+    if (audioUrl) {
+      const a = document.createElement('a');
+      a.href = audioUrl;
+      a.download = 'narration.mp3';
+      a.click();
+    }
+  };
+
+  const resetApp = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setPhase('upload');
+    setFile(null);
+    setFileName('');
+    setCurrentSubtitle(0);
+    setCurrentTime(0);
+    setError('');
+    setNarration('');
+    setAudioUrl('');
+    setDetectedSounds([]);
+    setProcessingLogs([]);
+    setTranscript('');
+    setProgress(0);
+    setProcessingMessage('');
+    setShowProcessingDetails(false);
   };
 
   const getSoundIcon = (soundLabel) => {
@@ -225,18 +329,7 @@ function SoundNarrativeGenerator() {
             </div>
           </div>
           <button
-            onClick={() => {
-              setPhase('upload');
-              setFile(null);
-              setFileName('');
-              setCurrentSubtitle(0);
-              setCurrentTime(0);
-              setError('');
-              setNarration('');
-              setAudioUrl('');
-              setDetectedSounds([]);
-              setProcessingLogs([]);
-            }}
+            onClick={resetApp}
             className="group flex items-center gap-2 h-9 px-4 rounded-lg bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-200"
           >
             <Sparkles className="w-4 h-4 text-white/70 group-hover:text-white/90 transition-colors" strokeWidth={2} />
@@ -256,7 +349,7 @@ function SoundNarrativeGenerator() {
                 <div className="inline-block mb-6">
                   <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.04] backdrop-blur-sm border border-white/[0.06]">
                     <div className="w-1.5 h-1.5 rounded-full bg-white/60 animate-pulse" />
-                    <span className="text-xs font-medium text-white/60 tracking-wide">Powered by Advanced AI</span>
+                    <span className="text-xs font-medium text-white/60 tracking-wide">Powered By ElevenLabs & Groq</span>
                   </div>
                 </div>
                 <h2 className="text-5xl sm:text-6xl lg:text-7xl xl:text-8xl font-bold tracking-tight mb-6 text-white/95 leading-[1.1]">
@@ -276,7 +369,7 @@ function SoundNarrativeGenerator() {
                 <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8 sm:p-12 overflow-hidden">
                   <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                   <div className="relative flex h-48 sm:h-56 items-center justify-center gap-1.5 sm:gap-2">
-                    {[...Array(window.innerWidth < 640 ? 15 : 25)].map((_, i) => (
+                    {[...Array(typeof window !== 'undefined' && window.innerWidth < 640 ? 15 : 25)].map((_, i) => (
                       <div
                         key={i}
                         className="w-1 sm:w-1.5 rounded-full bg-white/70 animate-wave"
@@ -293,9 +386,27 @@ function SoundNarrativeGenerator() {
 
               {/* Upload Controls */}
               <div className="mb-10 sm:mb-12 flex flex-col items-center gap-6 sm:flex-row sm:justify-center">
-                <button className="group relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white/[0.08] backdrop-blur-sm border border-white/[0.1] hover:bg-white/[0.12] hover:border-white/[0.14] transition-all duration-300 hover:scale-105">
-                  <Mic className="w-8 h-8 text-white/80 group-hover:text-white/95 transition-colors" strokeWidth={2} />
-                </button>
+                {!isRecording ? (
+                  <button 
+                    onClick={startRecording}
+                    className="group relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white/[0.08] backdrop-blur-sm border border-white/[0.1] hover:bg-white/[0.12] hover:border-white/[0.14] transition-all duration-300 hover:scale-105"
+                  >
+                    <Mic className="w-8 h-8 text-white/80 group-hover:text-white/95 transition-colors" strokeWidth={2} />
+                  </button>
+                ) : (
+                  <div className="flex flex-col items-center gap-3">
+                    <button 
+                      onClick={stopRecording}
+                      className="group relative flex h-20 w-20 items-center justify-center rounded-2xl bg-red-500/20 backdrop-blur-sm border border-red-500/30 hover:bg-red-500/30 hover:border-red-500/40 transition-all duration-300 animate-pulse"
+                    >
+                      <StopCircle className="w-8 h-8 text-red-400" strokeWidth={2} fill="currentColor" />
+                    </button>
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/10 border border-red-500/20">
+                      <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+                      <span className="text-sm font-mono text-red-300">{formatRecordingTime(recordingTime)}</span>
+                    </div>
+                  </div>
+                )}
                 
                 <div className="flex items-center gap-4">
                   <div className="h-px w-12 bg-white/[0.1]" />
@@ -305,10 +416,11 @@ function SoundNarrativeGenerator() {
 
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="group relative flex h-16 w-full max-w-sm items-center justify-center gap-3 rounded-2xl bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300"
+                  disabled={isRecording}
+                  className="group relative flex h-16 w-full max-w-sm items-center justify-center gap-3 rounded-2xl bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Upload className="w-5 h-5 text-white/70 group-hover:text-white/90 transition-colors" strokeWidth={2} />
-                  <span className="text-base font-medium text-white/80 group-hover:text-white/95 transition-colors">
+                  <span className="text-base font-medium text-white/80 group-hover:text-white/95 transition-colors truncate px-2">
                     {fileName || 'Choose Audio File'}
                   </span>
                   {fileName && <div className="w-2 h-2 rounded-full bg-white/60" />}
@@ -324,7 +436,7 @@ function SoundNarrativeGenerator() {
 
               {/* Error Display */}
               {error && (
-                <div className="mb-8 max-w-2xl mx-auto">
+                <div className="mb-8 max-w-2xl mx-auto animate-fade-in">
                   <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-center">
                     <p className="text-red-400 text-sm font-medium">{error}</p>
                   </div>
@@ -332,7 +444,7 @@ function SoundNarrativeGenerator() {
               )}
 
               {/* Generate Button */}
-              {file && !error && (
+              {file && !error && !isRecording && (
                 <div className="flex justify-center mb-14 animate-fade-in">
                   <button
                     onClick={handleGenerate}
@@ -541,7 +653,7 @@ function SoundNarrativeGenerator() {
                     <p className="text-base text-white/50 font-mono">
                       <span className="text-white/70">{formatTime(currentTime)}</span>
                       <span className="mx-2 text-white/30">/</span>
-                      <span>{formatTime(audioRef.current?.duration || totalDuration)}</span>
+                      <span>{formatTime(audioRef.current?.duration || 0)}</span>
                     </p>
                   </div>
 
@@ -549,9 +661,9 @@ function SoundNarrativeGenerator() {
                   <div className="relative mb-12">
                     <div className="absolute inset-0 bg-white/[0.02] blur-2xl" />
                     <div className="relative flex h-32 sm:h-40 items-end justify-center gap-0.5 sm:gap-1">
-                      {[...Array(window.innerWidth < 640 ? 25 : 35)].map((_, i) => {
-                        const totalBars = window.innerWidth < 640 ? 25 : 35;
-                        const audioDuration = audioRef.current?.duration || totalDuration;
+                      {[...Array(typeof window !== 'undefined' && window.innerWidth < 640 ? 25 : 35)].map((_, i) => {
+                        const totalBars = typeof window !== 'undefined' && window.innerWidth < 640 ? 25 : 35;
+                        const audioDuration = audioRef.current?.duration || 1;
                         const progressPercent = (currentTime / audioDuration) * 100;
                         const barPosition = (i / totalBars) * 100;
                         const isPastProgress = barPosition <= progressPercent;
@@ -613,6 +725,13 @@ function SoundNarrativeGenerator() {
                       ) : (
                         <Pause className="w-6 h-6 sm:w-7 sm:h-7" strokeWidth={2.5} fill="currentColor" />
                       )}
+                    </button>
+                    <button
+                      onClick={handleDownloadAudio}
+                      className="flex items-center gap-2.5 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90"
+                    >
+                      <Download className="w-4.5 h-4.5" strokeWidth={2} />
+                      <span>Download Audio</span>
                     </button>
                     <button
                       onClick={() => {
