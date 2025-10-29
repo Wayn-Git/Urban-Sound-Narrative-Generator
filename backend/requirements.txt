@@ -1,28 +1,10 @@
-# Core Framework
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-python-multipart==0.0.6
-
-# Environment & Configuration
-python-dotenv==1.0.0
-pydantic==2.5.3
-
-# Audio Processing
-torch==2.1.2
-torchaudio==2.1.2
-openai-whisper==20231117
-panns-inference==0.1.1
-pydub==0.25.1
-
-# AI Services
-groq==0.4.2
-requests==2.31.0
-
-# Utilities
-pathlib==1.0.1
-
-# CORS Support
-fastapi-cors==0.0.6
-
-# Optional: For better performance
-aiofiles==23.2.1
+fastapi
+uvicorn
+python-dotenv
+torch
+torchaudio
+openai-whisper
+panns-inference
+groq
+pydub
+requests

@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, Upload, Play, Pause, Copy, Download, ArrowRight, ArrowLeft, Sparkles, Loader2, Music2, Car, FootprintsIcon as Footprints, Bell, Bus, ChevronDown, ChevronUp, Code, StopCircle } from 'lucide-react';
 
-// IMPORTANT: Update this URL with your ngrok URL from Colab
-// Copy the URL that looks like: https://xxxxxxxxxxxx.ngrok-free.app
-const API_URL = 'https://ceaf0d11aa99.ngrok-free.app';
+const API_URL = "https://23164f15b510.ngrok-free.app";
 
 function SoundNarrativeGenerator() {
   const [phase, setPhase] = useState('upload');
@@ -146,9 +144,6 @@ function SoundNarrativeGenerator() {
       const response = await fetch(`${API_URL}/process-audio-stream`, {
         method: 'POST',
         body: formData,
-        headers: {
-          'ngrok-skip-browser-warning': 'true'
-        }
       });
 
       if (!response.ok) {
@@ -241,12 +236,12 @@ function SoundNarrativeGenerator() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  const handleCopy = (e) => {
+  const handleCopy = () => {
     navigator.clipboard.writeText(narration);
-    const button = e.target.closest('button');
+    const originalText = 'Copy';
+    const button = event.target.closest('button');
     const span = button.querySelector('span');
     if (span) {
-      const originalText = span.textContent;
       span.textContent = 'Copied!';
       setTimeout(() => {
         span.textContent = originalText;
@@ -335,7 +330,7 @@ function SoundNarrativeGenerator() {
           </div>
           <button
             onClick={resetApp}
-            className="group flex items-center gap-2 h-9 px-4 rounded-lg bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-200 cursor-pointer"
+            className="group flex items-center gap-2 h-9 px-4 rounded-lg bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-200"
           >
             <Sparkles className="w-4 h-4 text-white/70 group-hover:text-white/90 transition-colors" strokeWidth={2} />
             <span className="text-sm font-medium text-white/80 group-hover:text-white/95 transition-colors">New Project</span>
@@ -374,7 +369,7 @@ function SoundNarrativeGenerator() {
                 <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8 sm:p-12 overflow-hidden">
                   <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                   <div className="relative flex h-48 sm:h-56 items-center justify-center gap-1.5 sm:gap-2">
-                    {[...Array(25)].map((_, i) => (
+                    {[...Array(typeof window !== 'undefined' && window.innerWidth < 640 ? 15 : 25)].map((_, i) => (
                       <div
                         key={i}
                         className="w-1 sm:w-1.5 rounded-full bg-white/70 animate-wave"
@@ -394,7 +389,7 @@ function SoundNarrativeGenerator() {
                 {!isRecording ? (
                   <button 
                     onClick={startRecording}
-                    className="group relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white/[0.08] backdrop-blur-sm border border-white/[0.1] hover:bg-white/[0.12] hover:border-white/[0.14] transition-all duration-300 hover:scale-105 cursor-pointer"
+                    className="group relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white/[0.08] backdrop-blur-sm border border-white/[0.1] hover:bg-white/[0.12] hover:border-white/[0.14] transition-all duration-300 hover:scale-105"
                   >
                     <Mic className="w-8 h-8 text-white/80 group-hover:text-white/95 transition-colors" strokeWidth={2} />
                   </button>
@@ -402,7 +397,7 @@ function SoundNarrativeGenerator() {
                   <div className="flex flex-col items-center gap-3">
                     <button 
                       onClick={stopRecording}
-                      className="group relative flex h-20 w-20 items-center justify-center rounded-2xl bg-red-500/20 backdrop-blur-sm border border-red-500/30 hover:bg-red-500/30 hover:border-red-500/40 transition-all duration-300 animate-pulse cursor-pointer"
+                      className="group relative flex h-20 w-20 items-center justify-center rounded-2xl bg-red-500/20 backdrop-blur-sm border border-red-500/30 hover:bg-red-500/30 hover:border-red-500/40 transition-all duration-300 animate-pulse"
                     >
                       <StopCircle className="w-8 h-8 text-red-400" strokeWidth={2} fill="currentColor" />
                     </button>
@@ -422,7 +417,7 @@ function SoundNarrativeGenerator() {
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isRecording}
-                  className="group relative flex h-16 w-full max-w-sm items-center justify-center gap-3 rounded-2xl bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  className="group relative flex h-16 w-full max-w-sm items-center justify-center gap-3 rounded-2xl bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Upload className="w-5 h-5 text-white/70 group-hover:text-white/90 transition-colors" strokeWidth={2} />
                   <span className="text-base font-medium text-white/80 group-hover:text-white/95 transition-colors truncate px-2">
@@ -453,7 +448,7 @@ function SoundNarrativeGenerator() {
                 <div className="flex justify-center mb-14 animate-fade-in">
                   <button
                     onClick={handleGenerate}
-                    className="group relative h-14 sm:h-16 rounded-2xl px-10 sm:px-14 text-base font-semibold bg-white text-black hover:bg-white/95 transition-all duration-300 hover:scale-105 overflow-hidden cursor-pointer"
+                    className="group relative h-14 sm:h-16 rounded-2xl px-10 sm:px-14 text-base font-semibold bg-white text-black hover:bg-white/95 transition-all duration-300 hover:scale-105 overflow-hidden"
                   >
                     <span className="relative z-10 flex items-center gap-3">
                       <span>Generate Narrative</span>
@@ -475,7 +470,7 @@ function SoundNarrativeGenerator() {
                     {['Cars passing', 'Dog barking', 'Children laughing', 'Construction', 'Bicycle bell'].map((tag) => (
                       <span
                         key={tag}
-                        className="text-xs px-4 py-2 rounded-full bg-white/[0.05] text-white/60 border border-white/[0.08] hover:bg-white/[0.08] hover:border-white/[0.12] transition-all duration-300 cursor-default"
+                        className="text-xs px-4 py-2 rounded-full bg-white/[0.05] text-white/60 border border-white/[0.08] hover:bg-white/[0.08] hover:border-white/[0.12] transition-all duration-300"
                       >
                         {tag}
                       </span>
@@ -554,7 +549,7 @@ function SoundNarrativeGenerator() {
                       <div className="mt-8">
                         <button
                           onClick={() => setShowProcessingDetails(!showProcessingDetails)}
-                          className="group flex items-center gap-2 mx-auto px-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.08] transition-all duration-200 cursor-pointer"
+                          className="group flex items-center gap-2 mx-auto px-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.08] transition-all duration-200"
                         >
                           <Code className="w-4 h-4 text-white/60" strokeWidth={2} />
                           <span className="text-xs font-medium text-white/60">
@@ -617,7 +612,7 @@ function SoundNarrativeGenerator() {
                         setCurrentTime(0);
                         setIsPaused(false);
                       }}
-                      className="group flex items-center gap-3 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white text-black hover:bg-white/95 transition-all duration-300 hover:scale-105 cursor-pointer"
+                      className="group flex items-center gap-3 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white text-black hover:bg-white/95 transition-all duration-300 hover:scale-105"
                     >
                       <Play className="w-5 h-5" strokeWidth={2.5} fill="currentColor" />
                       <span>Play Narration</span>
@@ -625,14 +620,14 @@ function SoundNarrativeGenerator() {
                     </button>
                     <button
                       onClick={handleCopy}
-                      className="flex items-center gap-2.5 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90 cursor-pointer"
+                      className="flex items-center gap-2.5 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90"
                     >
                       <Copy className="w-4.5 h-4.5" strokeWidth={2} />
                       <span>Copy</span>
                     </button>
                     <button
                       onClick={handleExport}
-                      className="flex items-center gap-2.5 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90 cursor-pointer"
+                      className="flex items-center gap-2.5 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90"
                     >
                       <Download className="w-4.5 h-4.5" strokeWidth={2} />
                       <span>Export</span>
@@ -666,8 +661,8 @@ function SoundNarrativeGenerator() {
                   <div className="relative mb-12">
                     <div className="absolute inset-0 bg-white/[0.02] blur-2xl" />
                     <div className="relative flex h-32 sm:h-40 items-end justify-center gap-0.5 sm:gap-1">
-                      {[...Array(35)].map((_, i) => {
-                        const totalBars = 35;
+                      {[...Array(typeof window !== 'undefined' && window.innerWidth < 640 ? 25 : 35)].map((_, i) => {
+                        const totalBars = typeof window !== 'undefined' && window.innerWidth < 640 ? 25 : 35;
                         const audioDuration = audioRef.current?.duration || 1;
                         const progressPercent = (currentTime / audioDuration) * 100;
                         const barPosition = (i / totalBars) * 100;
@@ -723,7 +718,7 @@ function SoundNarrativeGenerator() {
                           setIsPaused(!isPaused);
                         }
                       }}
-                      className="group relative flex h-14 sm:h-16 w-14 sm:w-16 items-center justify-center rounded-2xl bg-white text-black hover:bg-white/95 transition-all duration-300 hover:scale-110 cursor-pointer"
+                      className="group relative flex h-14 sm:h-16 w-14 sm:w-16 items-center justify-center rounded-2xl bg-white text-black hover:bg-white/95 transition-all duration-300 hover:scale-110"
                     >
                       {isPaused ? (
                         <Play className="w-6 h-6 sm:w-7 sm:h-7" strokeWidth={2.5} fill="currentColor" />
@@ -733,7 +728,7 @@ function SoundNarrativeGenerator() {
                     </button>
                     <button
                       onClick={handleDownloadAudio}
-                      className="flex items-center gap-2.5 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90 cursor-pointer"
+                      className="flex items-center gap-2.5 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90"
                     >
                       <Download className="w-4.5 h-4.5" strokeWidth={2} />
                       <span>Download Audio</span>
@@ -749,7 +744,7 @@ function SoundNarrativeGenerator() {
                         setCurrentTime(0);
                         setIsPaused(false);
                       }}
-                      className="flex items-center gap-3 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90 cursor-pointer"
+                      className="flex items-center gap-3 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90"
                     >
                       <ArrowLeft className="w-5 h-5" strokeWidth={2} />
                       <span>Back to Text</span>
