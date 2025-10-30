@@ -1,0 +1,4 @@
+.env
+__pycache__/
+*.pyc
+audio/  # Optional: Ignore generated audio (ephemeral anyway)
