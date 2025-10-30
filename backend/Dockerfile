@@ -12,6 +12,7 @@ WORKDIR /app
 
 # Copy and install Python deps
 COPY requirements.txt .
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app code
