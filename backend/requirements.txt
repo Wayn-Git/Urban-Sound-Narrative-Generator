@@ -6,3 +6,6 @@ panns-inference==0.1.1
 requests==2.32.3
 groq==0.9.0
 pydub==0.25.1
+python-multipart
+requests
+aiofiles
