@@ -1,29 +1,34 @@
-# Python 3.11 slim (Whisper-compatible)
+# Base image: lightweight but fully compatible with Whisper
 FROM python:3.11-slim
 
-# Install FFmpeg (required by Whisper)
-RUN apt-get update && apt-get install -y ffmpeg && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y ffmpeg git && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
+# Set working directory
 WORKDIR /app
 
 # Upgrade pip
 RUN pip install --upgrade pip
 
-# Install dependencies
+# Copy and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Torch CPU wheels (needed for Whisper)
+# Install Torch CPU version (Railway free tier usually doesn’t support GPU)
 RUN pip install --no-cache-dir torch==2.3.1 torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cpu
 
-# Copy your app code
+# Copy the rest of your app code
 COPY . .
 
-# Create audio dir
-RUN mkdir -p audio
+# Create audio directory (safe for uploads/temp files)
+RUN mkdir -p /app/audio
 
-# Expose port 7860 (required by HF Spaces)
+# Railway sets PORT env automatically — use it dynamically
 EXPOSE 7860
+ENV PORT=7860
 
-# Run FastAPI
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
+# Run FastAPI server
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT}"]

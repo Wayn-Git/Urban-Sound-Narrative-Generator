@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: urban-sound-narrative
-    env: docker
-    dockerfilePath: ./Dockerfile
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11
-    autoDeploy: true
