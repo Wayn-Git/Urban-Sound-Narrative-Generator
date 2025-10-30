@@ -1,11 +1,10 @@
 services:
   - type: web
-    name: urban-narrative-api
+    name: urban-sound-narrative
     env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "uvicorn app:app --host 0.0.0.0 --port $PORT"
+    buildCommand: apt-get update && apt-get install -y ffmpeg && pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: GROQ_API_KEY
-        sync: false
-      - key: ELEVENLABS_API_KEY
-        sync: false
+      - key: PYTHON_VERSION
+        value: 3.12.7
+    autoDeploy: true
