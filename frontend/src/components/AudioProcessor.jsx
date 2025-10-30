@@ -3,7 +3,8 @@ import { Mic, Upload, Play, Pause, Copy, Download, ArrowRight, ArrowLeft, Sparkl
 
 // IMPORTANT: Update this URL with your ngrok URL from Colab
 // Copy the URL that looks like: https://xxxxxxxxxxxx.ngrok-free.app
-const API_URL = 'https://ceaf0d11aa99.ngrok-free.app';
+const API_URL = 'https://cae2c43c182a.ngrok-free.app';
+
 
 function SoundNarrativeGenerator() {
   const [phase, setPhase] = useState('upload');
@@ -45,7 +46,32 @@ function SoundNarrativeGenerator() {
       };
 
       audio.addEventListener('timeupdate', updateTime);
-      audio.play().catch(err => console.error('Audio play error:', err));
+      const playAudio = async () => {
+  try {
+    console.log('Audio URL:', audio.src);
+    console.log('Audio ready state:', audio.readyState);
+    
+    // Wait for audio to be ready
+    if (audio.readyState < 3) {
+      console.log('Waiting for audio to load...');
+      await new Promise((resolve) => {
+        audio.addEventListener('canplay', resolve, { once: true });
+      });
+    }
+    
+    await audio.play();
+    console.log('Audio playing successfully');
+  } catch (err) {
+    console.error('Audio play error:', err);
+    console.error('Error details:', {
+      name: err.name,
+      message: err.message,
+      code: err.code
+    });
+  }
+};
+
+playAudio();
 
       return () => {
         audio.removeEventListener('timeupdate', updateTime);
@@ -699,16 +725,17 @@ function SoundNarrativeGenerator() {
                   </div>
 
                   {/* Hidden Audio Element */}
-                  <audio
-                    ref={audioRef}
-                    src={audioUrl}
-                    onEnded={() => {
-                      setIsPaused(true);
-                      setCurrentTime(0);
-                      setCurrentSubtitle(0);
-                    }}
-                    className="hidden"
-                  />
+<audio
+  ref={audioRef}
+  src={audioUrl}
+  crossOrigin="anonymous"  // ADD THIS
+  onEnded={() => {
+    setIsPaused(true);
+    setCurrentTime(0);
+    setCurrentSubtitle(0);
+  }}
+  className="hidden"
+/>
 
                   {/* Enhanced Controls */}
                   <div className="flex flex-wrap gap-3 sm:gap-4 justify-center">
