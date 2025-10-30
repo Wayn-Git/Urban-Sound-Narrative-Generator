@@ -75,7 +75,8 @@ async def load_whisper_lazy():
     for attempt in range(max_retries):
         try:
             logger.info(f"Lazy-loading Whisper model (attempt {attempt + 1}/{max_retries})...")
-            models['whisper'] = whisper.load_model("base", device='cpu', download_root='/root/.cache/whisper')
+            models['whisper'] = whisper.load_model("tiny", device='cpu', download_root='/root/.cache/whisper')
+
             logger.info("Whisper model loaded successfully")
             return models['whisper']
         except Exception as e:
