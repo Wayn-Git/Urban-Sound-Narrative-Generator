@@ -1,9 +1,9 @@
 services:
   - type: web
-    name: urban-sound-narrative  # Or your preferred name
-    env: docker                 # Key change: Use Docker
-    dockerfilePath: ./Dockerfile  # Points to it
+    name: urban-sound-narrative
+    env: docker
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.7
+        value: 3.11
     autoDeploy: true
