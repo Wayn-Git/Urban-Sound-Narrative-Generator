@@ -3,7 +3,9 @@ import { Mic, Upload, Play, Pause, Copy, Download, ArrowRight, ArrowLeft, Sparkl
 
 // IMPORTANT: Update this URL with your ngrok URL from Colab
 // Copy the URL that looks like: https://xxxxxxxxxxxx.ngrok-free.app
-const API_URL = import.meta.env.REACT_APP_API_URL || 'http://localhost:8000';
+// const API_URL = import.meta.env.REACT_APP_API_URL || 'http://localhost:8000';
+
+const API_URL = 'https://1ed8835adb5d.ngrok-free.app';
 
 
 function SoundNarrativeGenerator() {
@@ -354,7 +356,7 @@ playAudio();
             </div>
             <div>
               <h1 className="text-lg font-semibold tracking-tight text-white/95">
-                Sound Narrative
+                Sound Script
               </h1>
               <p className="text-xs text-white/40 font-medium">AI-Powered Storytelling</p>
             </div>
