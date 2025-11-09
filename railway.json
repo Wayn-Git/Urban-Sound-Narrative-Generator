@@ -1,0 +1,9 @@
+{
+  "rootDirectory": "backend",
+  "build": {
+    "builder": "DOCKERFILE"
+  },
+  "deploy": {
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
