@@ -1,206 +1,95 @@
-# Optimized Backend v3.0.0 - Memory-Efficient Architecture
-# Designed for deployment on Render, Railway, or similar platforms
+# main.py
+# Urban Sound Narrative API — Railway-optimized (CPU-only, low-RAM safe)
+# - Whisper (base) is lazy-loaded and aggressively unloaded after each use
+# - PANNs AudioTagging is a singleton kept resident
+# - Pipeline is serialized via an asyncio.Semaphore to avoid RAM spikes
+# - SSE streaming for frontend progress
+# - Hard caps on upload size and duration
+# - External services: Groq (LLM), ElevenLabs (TTS)
 
 import os
+import io
 import gc
-import warnings
-import logging
-from pathlib import Path
-from typing import List, Tuple, Optional
-from contextlib import asynccontextmanager
-import asyncio
-import uuid
 import re
+import uuid
+import json
+import asyncio
+import logging
+import tempfile
+from pathlib import Path
+from typing import List
+from contextlib import asynccontextmanager
 
-from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+import torch
+import torchaudio
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
-import torch
-import torchaudio
-import requests
+from dotenv import load_dotenv
+
+# External services
+import whisper
+from panns_inference import AudioTagging, labels
 from groq import Groq
+from pydub import AudioSegment
+import requests
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-warnings.filterwarnings("ignore", category=SyntaxWarning, module="pydub")
-
+# -----------------------------
+# Settings & Globals
+# -----------------------------
+torch.set_num_threads(1)  # keep CPU use predictable on small containers
 load_dotenv()
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
-# ============= MODEL CONFIGURATION =============
-# Use smaller, faster models to reduce memory footprint
-WHISPER_MODEL_SIZE = "tiny"  # Options: tiny (39MB), base (74MB), small (244MB)
-DEVICE = 'cpu'  # Force CPU to avoid CUDA memory issues on free tiers
+MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "20"))                 # hard request limit
+MAX_AUDIO_DURATION_SEC = int(os.getenv("MAX_AUDIO_DURATION_SEC", "180"))  # 3 minutes
+MAX_CONCURRENT_JOBS = int(os.getenv("MAX_CONCURRENT_JOBS", "1"))      # serialize heavy ops
 
-# Global model cache (loaded on-demand, cleared after use)
-model_cache = {
-    "whisper": None,
-    "panns": None,
-    "whisper_last_used": 0,
-    "panns_last_used": 0
+WORK_DIR = Path(os.getenv("WORK_DIR", "/app"))
+AUDIO_DIR = WORK_DIR / "audio"
+AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+
+DEVICE = "cpu"  # Railway CPU container
+SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
+
+MODELS = {
+    "panns": None,   # singleton kept resident
+    "whisper": None  # loaded per call and then freed
 }
 
-# Model timeout (seconds) - unload if not used
-MODEL_TIMEOUT = 300  # 5 minutes
-
-# ============= API CONFIGURATIONS =============
-GROQ_MODEL_CONFIG = {
-    "model": "llama-3.3-70b-versatile",
-    "temperature": 0.7,
-    "max_tokens": 150,
-    "top_p": 0.9,
-    "frequency_penalty": 0.3,
-    "presence_penalty": 0.2
-}
-
-ELEVENLABS_V3_CONFIG = {
-    "voice_id": "cgSgspJ2msm6clMCkdW9",
-    "model_id": "eleven_turbo_v2_5",
-    "voice_settings": {
-        "stability": 0.4,
-        "similarity_boost": 0.75,
-        "style": 0.8,
-        "use_speaker_boost": True
-    },
-    "output_format": "mp3_44100_128"
-}
-
-# ============= PYDANTIC MODELS =============
-class ProcessingUpdate(BaseModel):
-    stage: str
-    message: str
-    sounds: List[str] = []
-    progress: int
-
-class AudioResponse(BaseModel):
-    narration: str
-    audio_url: str
-    detected_sounds: List[str]
-    transcript: str
-
-# ============= MEMORY-EFFICIENT MODEL LOADING =============
-
-async def load_whisper_model() -> Optional[object]:
-    """
-    Lazy-load Whisper model with aggressive memory management.
-    Uses smallest model variant for minimal footprint.
-    """
-    import time
-    
-    if model_cache["whisper"] is not None:
-        model_cache["whisper_last_used"] = time.time()
-        logger.info("Using cached Whisper model")
-        return model_cache["whisper"]
-    
-    try:
-        logger.info(f"Loading Whisper {WHISPER_MODEL_SIZE} model (CPU)...")
-        import whisper
-        
-        model = whisper.load_model(
-            WHISPER_MODEL_SIZE,
-            device=DEVICE,
-            download_root='/tmp/.cache/whisper'  # Use /tmp for ephemeral storage
-        )
-        
-        model_cache["whisper"] = model
-        model_cache["whisper_last_used"] = time.time()
-        
-        logger.info(f"Whisper {WHISPER_MODEL_SIZE} loaded successfully")
-        return model
-        
-    except Exception as e:
-        logger.error(f"Failed to load Whisper: {e}")
-        return None
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("urban-narration")
 
 
-async def load_panns_model() -> Optional[object]:
-    """
-    Lazy-load PANNs model with memory optimization.
-    Unloads after processing to free memory.
-    """
-    import time
-    
-    if model_cache["panns"] is not None:
-        model_cache["panns_last_used"] = time.time()
-        logger.info("Using cached PANNs model")
-        return model_cache["panns"]
-    
-    try:
-        logger.info("Loading PANNs audio tagging model (CPU)...")
-        from panns_inference import AudioTagging
-        
-        model = AudioTagging(checkpoint_path=None, device=DEVICE)
-        
-        model_cache["panns"] = model
-        model_cache["panns_last_used"] = time.time()
-        
-        logger.info("PANNs model loaded successfully")
-        return model
-        
-    except Exception as e:
-        logger.error(f"Failed to load PANNs: {e}")
-        raise HTTPException(status_code=500, detail=f"PANNs model loading failed: {e}")
-
-
-def unload_model(model_name: str):
-    """Force unload a model and free memory"""
-    if model_cache.get(model_name):
-        logger.info(f"Unloading {model_name} model to free memory")
-        model_cache[model_name] = None
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-
-async def cleanup_old_models():
-    """Background task to unload unused models"""
-    import time
-    
-    while True:
-        await asyncio.sleep(60)  # Check every minute
-        current_time = time.time()
-        
-        for model_name in ["whisper", "panns"]:
-            last_used = model_cache.get(f"{model_name}_last_used", 0)
-            if current_time - last_used > MODEL_TIMEOUT and model_cache.get(model_name):
-                unload_model(model_name)
-
-
-# ============= FASTAPI LIFESPAN =============
-
+# -----------------------------
+# FastAPI App & Lifespan
+# -----------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan - minimal startup, aggressive cleanup"""
-    logger.info("🚀 Starting Urban Sound Narrative API v3.0.0")
-    logger.info("⚡ Memory-optimized mode: Models load on-demand")
-    
-    # Create audio directory
-    os.makedirs("audio", exist_ok=True)
-    
-    # Start background cleanup task
-    cleanup_task = asyncio.create_task(cleanup_old_models())
-    
+    # Load PANNs once (singleton)
+    try:
+        log.info("Loading PANNs AudioTagging singleton (CPU)...")
+        MODELS["panns"] = AudioTagging(checkpoint_path=None, device=DEVICE)
+        log.info("PANNs ready.")
+    except Exception:
+        log.exception("Failed to load PANNs model")
+        raise
+
     yield
-    
-    # Cleanup on shutdown
-    cleanup_task.cancel()
-    for model_name in ["whisper", "panns"]:
-        unload_model(model_name)
-    
-    logger.info("✅ Application shutdown complete")
 
-
-# ============= FASTAPI APP =============
+    # Shutdown cleanup
+    MODELS["panns"] = None
+    gc.collect()
+    log.info("Shutdown complete: models cleared.")
 
 app = FastAPI(
     title="Urban Sound Narrative API",
-    description="Memory-Optimized AI Audio Processing",
+    description="Transforms urban sounds + speech into cinematic narration",
     version="3.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -209,339 +98,293 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"]
+    expose_headers=["*"],
 )
 
-# ============= PROMPT BUILDERS =============
 
-def build_groq_prompt(sound_context: str, transcript: str) -> str:
-    """Optimized prompt for narrative generation"""
+# -----------------------------
+# DTOs
+# -----------------------------
+class PipelineResult(BaseModel):
+    narration: str
+    audio_url: str
+    detected_sounds: List[str]
+    transcript: str
+
+
+# -----------------------------
+# Utilities
+# -----------------------------
+def _safe_name(name: str) -> str:
+    return re.sub(r'[^a-zA-Z0-9._-]', '_', name)
+
+def _ensure_duration_ok(filepath: Path):
+    try:
+        info = torchaudio.info(str(filepath))
+        seconds = info.num_frames / max(1, info.sample_rate)
+        if seconds > MAX_AUDIO_DURATION_SEC:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Audio too long ({seconds:.1f}s). Max is {MAX_AUDIO_DURATION_SEC}s."
+            )
+    except Exception as e:
+        # If torchaudio backend can’t parse (rare), allow small files; otherwise reject
+        log.warning(f"Duration check warning: {e}")
+
+def _resample_mono_32k(src_path: Path) -> torch.Tensor:
+    wav, sr = torchaudio.load(str(src_path))
+    if wav.ndim == 2 and wav.size(0) > 1:
+        wav = wav.mean(dim=0, keepdim=True)
+    if sr != 32000:
+        wav = torchaudio.transforms.Resample(orig_freq=sr, new_freq=32000)(wav)
+    # Return CPU tensor, shape (1, T)
+    return wav
+
+def _sse(msg: dict) -> str:
+    return json.dumps(msg) + "\n"
+
+
+# -----------------------------
+# Whisper (lazy, unload after use)
+# -----------------------------
+async def _transcribe_with_whisper(src_path: Path) -> str:
+    model = None
+    try:
+        log.info("Lazy-loading Whisper base (CPU)...")
+        model = whisper.load_model("base", device=DEVICE)
+        result = model.transcribe(str(src_path))
+        text = (result.get("text") or "").strip() or "(no speech detected)"
+        log.info(f"Transcription length: {len(text)} chars")
+        return text
+    except Exception:
+        log.exception("Whisper transcription failed")
+        return "(transcription failed)"
+    finally:
+        # Aggressively free memory
+        try:
+            del model  # type: ignore
+        except:
+            pass
+        gc.collect()
+        log.info("Whisper unloaded.")
+
+
+# -----------------------------
+# PANNs (singleton)
+# -----------------------------
+def _detect_sounds_panns(waveform_mono_32k: torch.Tensor) -> List[str]:
+    clipwise, _ = MODELS["panns"].inference(waveform_mono_32k)
+    clipwise = clipwise.squeeze()
+    top_idx = clipwise.argsort()[-5:][::-1]
+    sounds = [labels[int(i)] for i in top_idx]
+    log.info(f"Detected sounds: {sounds}")
+    return sounds
+
+
+# -----------------------------
+# Groq LLM
+# -----------------------------
+def _build_llm_prompt(sound_ctx: str, transcript: str) -> str:
     return (
-        f"You are a master storyteller. Based on these sounds: {sound_context}, "
-        f"write a vivid 2-3 sentence urban scene.\n\n"
-        f"CRITICAL: Integrate this phrase naturally: '{transcript}'\n"
-        f"Use [emotion] tags for dialogue delivery (e.g., [enthusiastically]).\n"
-        f"Focus on sensory details and human moments. No sound effects."
+        "You are a master storyteller crafting a cinematic urban narrative. "
+        f"Detected sounds: {sound_ctx}. "
+        "Write a vivid, emotionally evocative 2–3 sentence scene that feels alive with sensory detail. "
+        f"Seamlessly integrate this spoken phrase: '{transcript}'. "
+        "Use [bracketed_emotion] only for dialogue tone (e.g., [thoughtfully]). "
+        "Avoid literal sound effect words or onomatopoeia."
     )
 
-
-def build_elevenlabs_prompt(narration_text: str, sound_context: str) -> str:
-    """Optimized prompt for TTS with emotional delivery"""
-    return f"""<voice>{narration_text}</voice>
-<style>
-Deliver with genuine emotion and dynamic pacing. For bracketed cues like [enthusiastically], 
-embody the emotion fully. Vary pitch and intensity to match the scene's energy.
-</style>
-<context>
-Urban soundscape featuring: {sound_context}. Make it cinematic and emotionally resonant.
-</context>"""
-
-
-# ============= CORE PROCESSING FUNCTIONS =============
-
-async def transcribe_audio(audio_path: str) -> str:
-    """
-    Transcribe audio with Whisper, then immediately unload model.
-    """
-    model = await load_whisper_model()
-    
-    if model is None:
-        logger.warning("Whisper unavailable - using fallback")
-        return "(transcription unavailable)"
-    
-    try:
-        result = model.transcribe(audio_path, fp16=False)  # fp16=False for CPU
-        transcript = result["text"].strip() or "(no speech detected)"
-        logger.info(f"Transcribed: {transcript}")
-        return transcript
-        
-    except Exception as e:
-        logger.error(f"Transcription error: {e}")
-        return "(transcription failed)"
-        
-    finally:
-        # CRITICAL: Unload Whisper immediately after use
-        unload_model("whisper")
-        gc.collect()
+async def _narrate_groq(sound_types: List[str], transcript: str) -> str:
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY missing")
+    client = Groq(api_key=GROQ_API_KEY)
+    prompt = _build_llm_prompt(", ".join(sound_types), transcript)
+    resp = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        temperature=0.7,
+        max_tokens=150,
+        top_p=0.9,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = (resp.choices[0].message.content or "").strip()
+    if not text:
+        raise HTTPException(status_code=502, detail="LLM returned empty narration")
+    log.info(f"Narration length: {len(text)} chars")
+    return text
 
 
-async def detect_sounds(audio_path: str) -> List[str]:
-    """
-    Detect sounds with PANNs, then immediately unload model.
-    """
-    model = await load_panns_model()
-    
-    try:
-        # Load and preprocess audio
-        waveform, sr = torchaudio.load(audio_path)
-        
-        if sr != 32000:
-            waveform = torchaudio.transforms.Resample(orig_freq=sr, new_freq=32000)(waveform)
-        
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
-        
-        waveform = waveform.to(DEVICE)
-        
-        # Inference
-        from panns_inference import labels
-        clipwise_output, _ = model.inference(waveform)
-        clipwise_output = clipwise_output.squeeze()
-        
-        # Get top 5 sounds
-        top_indices = clipwise_output.argsort()[-5:][::-1]
-        sound_types = [labels[int(i)] for i in top_indices]
-        
-        logger.info(f"Detected sounds: {sound_types}")
-        return sound_types
-        
-    finally:
-        # CRITICAL: Unload PANNs immediately after use
-        unload_model("panns")
-        gc.collect()
+# -----------------------------
+# ElevenLabs TTS
+# -----------------------------
+async def _tts_elevenlabs(narration: str, out_name: str) -> Path:
+    if not ELEVENLABS_API_KEY:
+        raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY missing")
+
+    # Voice: replace with your voice id if needed
+    url = "https://api.elevenlabs.io/v1/text-to-speech/cgSgspJ2msm6clMCkdW9"
+    payload = {
+        "text": narration,
+        "model_id": "eleven_turbo_v2_5",
+        "voice_settings": {
+            "stability": 0.4,
+            "similarity_boost": 0.75,
+            "style": 0.8,
+            "use_speaker_boost": True
+        },
+        "output_format": "mp3_44100_128"
+    }
+    headers = {
+        "xi-api-key": ELEVENLABS_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg"
+    }
+
+    r = requests.post(url, headers=headers, json=payload, timeout=45)
+    if r.status_code != 200:
+        raise HTTPException(status_code=r.status_code, detail=f"ElevenLabs error: {r.text}")
+
+    tmp_path = AUDIO_DIR / f"tmp_{out_name}"
+    with open(tmp_path, "wb") as f:
+        f.write(r.content)
+
+    # Gentle polish (requires ffmpeg in container)
+    audio = AudioSegment.from_mp3(tmp_path)
+    audio = audio + 6
+    audio = audio.normalize()
+    audio = audio.fade_in(80).fade_out(160)
+
+    out_path = AUDIO_DIR / out_name
+    audio.export(out_path, format="mp3", bitrate="192k", parameters=["-q:a", "0"])
+    tmp_path.unlink(missing_ok=True)
+
+    log.info(f"TTS ready: {out_path}")
+    return out_path
 
 
-async def generate_narrative(sound_types: List[str], transcript: str) -> Tuple[str, str]:
-    """Generate narrative text using Groq LLM"""
-    try:
-        sound_context = ", ".join(sound_types)
-        
-        if not GROQ_API_KEY:
-            raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
-        
-        client = Groq(api_key=GROQ_API_KEY)
-        prompt = build_groq_prompt(sound_context, transcript)
-        
-        response = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            **GROQ_MODEL_CONFIG
-        )
-        
-        narration = response.choices[0].message.content.strip()
-        
-        if not narration:
-            raise ValueError("GROQ returned empty narration")
-        
-        logger.info(f"Generated narration ({len(narration)} chars)")
-        return narration, sound_context
-        
-    except Exception as e:
-        logger.error(f"GROQ API error: {e}")
-        raise HTTPException(status_code=500, detail=f"Narrative generation failed: {e}")
-
-
-async def synthesize_audio(narration_text: str, sound_context: str, output_filename: str) -> str:
-    """Synthesize audio with ElevenLabs"""
-    try:
-        if not ELEVENLABS_API_KEY:
-            raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY not configured")
-        
-        elevenlabs_prompt = build_elevenlabs_prompt(narration_text, sound_context)
-        
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_V3_CONFIG['voice_id']}"
-        headers = {
-            "xi-api-key": ELEVENLABS_API_KEY,
-            "Content-Type": "application/json",
-            "Accept": "audio/mpeg"
-        }
-        payload = {
-            "text": elevenlabs_prompt,
-            "model_id": ELEVENLABS_V3_CONFIG["model_id"],
-            "voice_settings": ELEVENLABS_V3_CONFIG["voice_settings"],
-            "output_format": ELEVENLABS_V3_CONFIG["output_format"]
-        }
-        
-        logger.info("Synthesizing speech with ElevenLabs V3")
-        
-        response = requests.post(url, headers=headers, json=payload, timeout=45)
-        
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"ElevenLabs TTS failed: {response.text}"
-            )
-        
-        output_path = f"audio/{output_filename}"
-        
-        # Direct write (skip pydub if memory is tight)
-        with open(output_path, "wb") as f:
-            f.write(response.content)
-        
-        logger.info(f"Audio saved to {output_path}")
-        return output_path
-        
-    except requests.exceptions.Timeout:
-        raise HTTPException(status_code=504, detail="TTS service timed out")
-    except Exception as e:
-        logger.error(f"TTS error: {e}")
-        raise HTTPException(status_code=500, detail=f"Audio synthesis failed: {e}")
-
-
-# ============= STREAMING PROCESSOR =============
-
-async def process_audio_streaming(audio_path: str, output_filename: str):
-    """
-    Main processing pipeline with streaming updates.
-    Optimized for memory efficiency.
-    """
-    try:
-        import json
-        
-        # Validate input
-        if not os.path.exists(audio_path):
-            yield json.dumps({"stage": "error", "message": "Upload failed", "sounds": [], "progress": 0}) + "\n"
-            return
-        
-        yield json.dumps({"stage": "loading", "message": "🎧 Loading audio...", "sounds": [], "progress": 10}) + "\n"
-        await asyncio.sleep(0.3)
-        
-        # STEP 1: Transcribe (Whisper loaded/unloaded here)
-        yield json.dumps({"stage": "transcribing", "message": "👂 Transcribing speech...", "sounds": [], "progress": 25}) + "\n"
-        transcript = await transcribe_audio(audio_path)
-        
-        yield json.dumps({"stage": "transcribe_complete", "message": "✅ Speech captured", "sounds": [], "progress": 40}) + "\n"
-        await asyncio.sleep(0.3)
-        
-        # STEP 2: Detect sounds (PANNs loaded/unloaded here)
-        yield json.dumps({"stage": "extracting", "message": "🔊 Analyzing sounds...", "sounds": [], "progress": 55}) + "\n"
-        sound_types = await detect_sounds(audio_path)
-        
-        yield json.dumps({"stage": "sounds_detected", "message": "✨ Sounds identified!", "sounds": sound_types, "progress": 70}) + "\n"
-        
-        # Clean up input file ASAP
-        try:
-            Path(audio_path).unlink()
-            logger.info(f"Input file deleted: {audio_path}")
-        except Exception as e:
-            logger.warning(f"Could not delete input: {e}")
-        
-        await asyncio.sleep(0.3)
-        
-        # STEP 3: Generate narrative (API call)
-        yield json.dumps({"stage": "ai_processing", "message": "🤖 Crafting narrative...", "sounds": sound_types, "progress": 80}) + "\n"
-        narration, sound_context = await generate_narrative(sound_types, transcript)
-        
-        # STEP 4: Synthesize voice (API call)
-        yield json.dumps({"stage": "voice_generation", "message": "🎙️ Generating voice...", "sounds": sound_types, "progress": 90}) + "\n"
-        output_path = await synthesize_audio(narration, sound_context, output_filename)
-        
-        yield json.dumps({"stage": "finalizing", "message": "✨ Finalizing...", "sounds": sound_types, "progress": 95}) + "\n"
-        await asyncio.sleep(0.3)
-        
-        # Complete
-        audio_url = f"/audio/{output_filename}"
-        yield json.dumps({
-            "stage": "complete",
-            "message": "✅ Complete!",
-            "sounds": sound_types,
-            "progress": 100,
-            "narration": narration,
-            "audio_url": audio_url,
-            "transcript": transcript
-        }) + "\n"
-        
-    except Exception as e:
-        logger.error(f"Processing error: {e}", exc_info=True)
-        yield json.dumps({"stage": "error", "message": f"❌ Error: {str(e)}", "sounds": [], "progress": 0}) + "\n"
-
-
-# ============= API ENDPOINTS =============
-
+# -----------------------------
+# API Endpoints
+# -----------------------------
 @app.post("/process-audio-stream")
-async def process_audio_stream(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    """Main endpoint for audio processing with streaming updates"""
-    
-    # Validate file type
-    if not file.filename.endswith((".mp3", ".wav")):
-        raise HTTPException(status_code=400, detail="Only MP3 or WAV files allowed")
-    
-    # Generate unique filenames
-    unique_id = str(uuid.uuid4())
-    safe_filename = re.sub(r'[^a-zA-Z0-9._-]', '_', file.filename)
-    output_filename = f"output_{unique_id}.mp3"
-    audio_path = f"audio/upload_{unique_id}_{safe_filename}"
-    
-    try:
-        # Save uploaded file
-        content = await file.read()
-        with open(audio_path, "wb") as f:
-            f.write(content)
-        
-        logger.info(f"Uploaded {len(content)} bytes to {audio_path}")
-        
-        # Schedule output cleanup (5 minutes)
-        async def cleanup_output():
-            await asyncio.sleep(300)
-            output_path = f"audio/{output_filename}"
-            if os.path.exists(output_path):
-                Path(output_path).unlink()
-                logger.info(f"Output cleaned: {output_path}")
-        
-        background_tasks.add_task(cleanup_output)
-        
-        # Return streaming response
-        return StreamingResponse(
-            process_audio_streaming(audio_path, output_filename),
-            media_type="text/event-stream"
-        )
-        
-    except Exception as e:
-        logger.error(f"Upload error: {e}")
-        Path(audio_path).unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
+async def process_audio_stream(file: UploadFile = File(...)):
+    # Simple extension check
+    if not (file.filename.endswith(".mp3") or file.filename.endswith(".wav")):
+        raise HTTPException(status_code=400, detail="Only .mp3 or .wav allowed")
+
+    # Persist to /tmp (Railway supports this)
+    uid = str(uuid.uuid4())
+    safe_in = _safe_name(file.filename)
+    in_path = Path(tempfile.gettempdir()) / f"upload_{uid}_{safe_in}"
+    out_name = f"narration_{uid}.mp3"
+
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"File too large. Max {MAX_UPLOAD_MB} MB.")
+
+    with open(in_path, "wb") as f:
+        f.write(content)
+
+    async def _run():
+        try:
+            yield _sse({"stage": "loading", "message": "Analyzing audio...", "progress": 10})
+            _ensure_duration_ok(in_path)
+
+            async with SEMAPHORE:
+                # Transcribe (lazy-load + unload Whisper)
+                yield _sse({"stage": "transcribing", "message": "Transcribing speech...", "progress": 20})
+                transcript = await _transcribe_with_whisper(in_path)
+                yield _sse({"stage": "transcribe_complete", "message": "Speech transcribed.", "progress": 35})
+
+                # Prepare waveform (mono 32k)
+                yield _sse({"stage": "extracting", "message": "Preparing waveform...", "progress": 45})
+                wf = _resample_mono_32k(in_path)
+
+                # Tag sounds (PANNs singleton)
+                yield _sse({"stage": "identifying", "message": "Identifying urban soundscapes...", "progress": 55})
+                sounds = _detect_sounds_panns(wf)
+                yield _sse({"stage": "sounds_detected", "sounds": sounds, "message": "Sounds detected.", "progress": 65})
+
+                # LLM narration (remote)
+                yield _sse({"stage": "ai_processing", "message": "Crafting narrative...", "progress": 75})
+                narration = await _narrate_groq(sounds, transcript)
+
+                # TTS (remote) + polish
+                yield _sse({"stage": "voice_generation", "message": "Generating expressive narration...", "progress": 90})
+                out_path = await _tts_elevenlabs(narration, out_name)
+
+            audio_url = f"/audio/{out_name}"
+            yield _sse({
+                "stage": "complete",
+                "message": "Done.",
+                "progress": 100,
+                "narration": narration,
+                "audio_url": audio_url,
+                "detected_sounds": sounds,
+                "transcript": transcript
+            })
+        except HTTPException as he:
+            yield _sse({"stage": "error", "message": he.detail, "progress": 0})
+        except Exception as e:
+            log.exception("Pipeline failed")
+            yield _sse({"stage": "error", "message": str(e), "progress": 0})
+        finally:
+            try:
+                in_path.unlink(missing_ok=True)
+            except:
+                pass
+            gc.collect()
+
+    return StreamingResponse(_run(), media_type="text/event-stream")
 
 
 @app.get("/audio/{filename}")
 async def serve_audio(filename: str):
-    """Serve generated audio files"""
-    file_path = f"audio/{filename}"
-    
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Audio file not found")
-    
+    fp = AUDIO_DIR / _safe_name(filename)
+    if not fp.exists():
+        raise HTTPException(status_code=404, detail="Audio not found")
     return FileResponse(
-        file_path,
+        str(fp),
         media_type="audio/mpeg",
         headers={
             "Accept-Ranges": "bytes",
             "Cache-Control": "no-cache",
-            "Access-Control-Allow-Origin": "*"
+            "Access-Control-Expose-Headers": "*"
         }
     )
 
 
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "panns_loaded": MODELS["panns"] is not None,
+        "device": DEVICE,
+        "limits": {
+            "max_upload_mb": MAX_UPLOAD_MB,
+            "max_duration_sec": MAX_AUDIO_DURATION_SEC,
+            "max_concurrent_jobs": MAX_CONCURRENT_JOBS
+        }
+    }
+
+
+@app.post("/warmup")
+async def warmup():
+    # Touch PANNs quickly to ensure weights are resident
+    dummy = torch.zeros(1, 32000)  # 1 second of 32k mono
+    _ = _detect_sounds_panns(dummy)
+    return {"status": "warmed"}
+
+
 @app.get("/")
 async def root():
-    """API root with status information"""
     return {
-        "status": "healthy",
-        "message": "Urban Sound Narrative API v3.0.0",
+        "name": "Urban Sound Narrative API",
         "version": "3.0.0",
-        "optimizations": [
-            "Lazy model loading with auto-unload",
-            f"Whisper {WHISPER_MODEL_SIZE} model (minimal footprint)",
-            "PANNs on-demand loading",
-            "Aggressive garbage collection",
-            "CPU-only inference",
-            "Streaming responses"
-        ],
-        "memory": "Optimized for 512MB-1GB RAM environments"
+        "message": "Whisper(base) lazy + PANNs singleton; SSE pipeline; Railway-optimized",
     }
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "whisper_cached": model_cache["whisper"] is not None,
-        "panns_cached": model_cache["panns"] is not None,
-        "device": DEVICE,
-        "whisper_model": WHISPER_MODEL_SIZE,
-        "groq_configured": bool(GROQ_API_KEY),
-        "elevenlabs_configured": bool(ELEVENLABS_API_KEY)
-    }
-
-
-# Ensure audio directory exists
-os.makedirs("audio", exist_ok=True)
+# Optional: local dev entrypoint (ignored by Railway which uses Procfile)
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

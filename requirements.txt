@@ -1,2 +1,0 @@
-pip install fastapi uvicorn python-dotenv panns-inference openai-whisper torch torchaudio groq librosa numpy requests pydub
-pip freeze > requirements.txt
