@@ -1,11 +1,24 @@
+# Core FastAPI dependencies
 fastapi==0.115.0
-uvicorn[standard]==0.30.6
+uvicorn[standard]==0.32.0
+pydantic==2.9.2
 python-dotenv==1.0.1
+python-multipart==0.0.12
+
+# Audio processing (optimized versions)
+torch==2.5.1
+torchaudio==2.5.1
 openai-whisper==20231117
+
+# Sound classification (lightweight)
 panns-inference==0.1.1
+
+# API clients
+groq==0.11.0
 requests==2.32.3
-groq==0.9.0
-pydub==0.25.1
-python-multipart
-requests
-aiofiles
+
+# Optional: Only if you need audio enhancement
+# pydub==0.25.1  # Comment out if memory is very tight
+
+# Performance optimization
+psutil==6.1.0

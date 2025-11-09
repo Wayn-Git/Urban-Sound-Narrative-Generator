@@ -1,29 +1,28 @@
-# Backend v2.0.5 - Enhanced CORS for Audio Streaming
+# Optimized Backend v3.0.0 - Memory-Efficient Architecture
+# Designed for deployment on Render, Railway, or similar platforms
 
 import os
+import gc
+import warnings
+import logging
+from pathlib import Path
+from typing import List, Tuple, Optional
+from contextlib import asynccontextmanager
+import asyncio
+import uuid
+import re
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
-from contextlib import asynccontextmanager
 import torch
 import torchaudio
-import whisper
-from panns_inference import AudioTagging, labels
 import requests
 from groq import Groq
-from pydub import AudioSegment
-from pathlib import Path
-import warnings
-import uuid
-import json
-import asyncio
-import logging
-from typing import List, Tuple
-import time
-import re
 
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pydub")
@@ -32,8 +31,23 @@ load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
-models = {}
+# ============= MODEL CONFIGURATION =============
+# Use smaller, faster models to reduce memory footprint
+WHISPER_MODEL_SIZE = "tiny"  # Options: tiny (39MB), base (74MB), small (244MB)
+DEVICE = 'cpu'  # Force CPU to avoid CUDA memory issues on free tiers
 
+# Global model cache (loaded on-demand, cleared after use)
+model_cache = {
+    "whisper": None,
+    "panns": None,
+    "whisper_last_used": 0,
+    "panns_last_used": 0
+}
+
+# Model timeout (seconds) - unload if not used
+MODEL_TIMEOUT = 300  # 5 minutes
+
+# ============= API CONFIGURATIONS =============
 GROQ_MODEL_CONFIG = {
     "model": "llama-3.3-70b-versatile",
     "temperature": 0.7,
@@ -55,6 +69,7 @@ ELEVENLABS_V3_CONFIG = {
     "output_format": "mp3_44100_128"
 }
 
+# ============= PYDANTIC MODELS =============
 class ProcessingUpdate(BaseModel):
     stage: str
     message: str
@@ -67,52 +82,124 @@ class AudioResponse(BaseModel):
     detected_sounds: List[str]
     transcript: str
 
-async def load_whisper_lazy():
-    if 'whisper' in models and models['whisper'] is not None:
-        return models['whisper']
-    max_retries = 3
-    retry_delay = 10
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Lazy-loading Whisper model (attempt {attempt + 1}/{max_retries})...")
-            models['whisper'] = whisper.load_model("tiny", device='cpu', download_root='/root/.cache/whisper')
+# ============= MEMORY-EFFICIENT MODEL LOADING =============
 
-            logger.info("Whisper model loaded successfully")
-            return models['whisper']
-        except Exception as e:
-            logger.warning(f"Failed to load Whisper (attempt {attempt + 1}): {str(e)}")
-            if attempt < max_retries - 1:
-                logger.info(f"Retrying in {retry_delay} seconds...")
-                await asyncio.sleep(retry_delay)
-            else:
-                logger.error(f"Whisper load failed after {max_retries} attempts: {str(e)}")
-                models['whisper'] = None
-                return None
+async def load_whisper_model() -> Optional[object]:
+    """
+    Lazy-load Whisper model with aggressive memory management.
+    Uses smallest model variant for minimal footprint.
+    """
+    import time
+    
+    if model_cache["whisper"] is not None:
+        model_cache["whisper_last_used"] = time.time()
+        logger.info("Using cached Whisper model")
+        return model_cache["whisper"]
+    
+    try:
+        logger.info(f"Loading Whisper {WHISPER_MODEL_SIZE} model (CPU)...")
+        import whisper
+        
+        model = whisper.load_model(
+            WHISPER_MODEL_SIZE,
+            device=DEVICE,
+            download_root='/tmp/.cache/whisper'  # Use /tmp for ephemeral storage
+        )
+        
+        model_cache["whisper"] = model
+        model_cache["whisper_last_used"] = time.time()
+        
+        logger.info(f"Whisper {WHISPER_MODEL_SIZE} loaded successfully")
+        return model
+        
+    except Exception as e:
+        logger.error(f"Failed to load Whisper: {e}")
+        return None
+
+
+async def load_panns_model() -> Optional[object]:
+    """
+    Lazy-load PANNs model with memory optimization.
+    Unloads after processing to free memory.
+    """
+    import time
+    
+    if model_cache["panns"] is not None:
+        model_cache["panns_last_used"] = time.time()
+        logger.info("Using cached PANNs model")
+        return model_cache["panns"]
+    
+    try:
+        logger.info("Loading PANNs audio tagging model (CPU)...")
+        from panns_inference import AudioTagging
+        
+        model = AudioTagging(checkpoint_path=None, device=DEVICE)
+        
+        model_cache["panns"] = model
+        model_cache["panns_last_used"] = time.time()
+        
+        logger.info("PANNs model loaded successfully")
+        return model
+        
+    except Exception as e:
+        logger.error(f"Failed to load PANNs: {e}")
+        raise HTTPException(status_code=500, detail=f"PANNs model loading failed: {e}")
+
+
+def unload_model(model_name: str):
+    """Force unload a model and free memory"""
+    if model_cache.get(model_name):
+        logger.info(f"Unloading {model_name} model to free memory")
+        model_cache[model_name] = None
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+
+async def cleanup_old_models():
+    """Background task to unload unused models"""
+    import time
+    
+    while True:
+        await asyncio.sleep(60)  # Check every minute
+        current_time = time.time()
+        
+        for model_name in ["whisper", "panns"]:
+            last_used = model_cache.get(f"{model_name}_last_used", 0)
+            if current_time - last_used > MODEL_TIMEOUT and model_cache.get(model_name):
+                unload_model(model_name)
+
+
+# ============= FASTAPI LIFESPAN =============
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Loading AI models...")
-    try:
-        models['panns'] = AudioTagging(checkpoint_path=None, device='cpu')
-        logger.info("PANNs model loaded successfully")
-    except Exception as e:
-        logger.error(f"Failed to load PANNs model: {str(e)}")
-        raise
-    try:
-        await load_whisper_lazy()
-    except Exception as e:
-        logger.warning(f"Initial Whisper load failed (will retry lazily): {str(e)}")
-        models['whisper'] = None
+    """Application lifespan - minimal startup, aggressive cleanup"""
+    logger.info("🚀 Starting Urban Sound Narrative API v3.0.0")
+    logger.info("⚡ Memory-optimized mode: Models load on-demand")
+    
+    # Create audio directory
     os.makedirs("audio", exist_ok=True)
-    logger.info("Models setup complete. Server ready!")
+    
+    # Start background cleanup task
+    cleanup_task = asyncio.create_task(cleanup_old_models())
+    
     yield
-    models.clear()
-    logger.info("Application shutdown complete")
+    
+    # Cleanup on shutdown
+    cleanup_task.cancel()
+    for model_name in ["whisper", "panns"]:
+        unload_model(model_name)
+    
+    logger.info("✅ Application shutdown complete")
+
+
+# ============= FASTAPI APP =============
 
 app = FastAPI(
     title="Urban Sound Narrative API",
-    description="AI-Powered Audio Processing for Emotionally Rich Narration",
-    version="2.0.5",
+    description="Memory-Optimized AI Audio Processing",
+    version="3.0.0",
     lifespan=lifespan
 )
 
@@ -122,63 +209,135 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"]  # CRITICAL: Expose all headers for audio streaming
+    expose_headers=["*"]
 )
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+# ============= PROMPT BUILDERS =============
 
-def build_optimized_groq_prompt(sound_context: str, transcript: str) -> str:
-    prompt_text = (
-        "You are a master storyteller crafting a cinematic urban narrative. "
-        f"Based on these detected sounds: {sound_context}, write a vivid, "
-        "emotionally evocative 2-3 sentence scene that immerses the reader in a bustling city moment.\n\n"
-        "CRITICAL REQUIREMENTS:\n"
-        f"1. Seamlessly integrate this spoken phrase into the scene: '{transcript}'\n"
-        "2. Use square brackets to mark emotional delivery ONLY for dialogue, like: "
-        "[enthusiastically], [wearily], [sarcastically], [thoughtfully]\n"
-        "3. Make the scene feel alive - use sensory details, movement, and atmosphere\n"
-        "4. DO NOT include sound effect descriptions like (car honking) or *dog barks*\n"
-        "5. Focus on human moments and urban poetry\n\n"
-        "Example style: 'The afternoon pulse of the city beats steadily as vendors call out their wares. "
-        'A passerby mutters [sarcastically], "Another beautiful day in paradise," while dodging between rushing commuters.\''
+def build_groq_prompt(sound_context: str, transcript: str) -> str:
+    """Optimized prompt for narrative generation"""
+    return (
+        f"You are a master storyteller. Based on these sounds: {sound_context}, "
+        f"write a vivid 2-3 sentence urban scene.\n\n"
+        f"CRITICAL: Integrate this phrase naturally: '{transcript}'\n"
+        f"Use [emotion] tags for dialogue delivery (e.g., [enthusiastically]).\n"
+        f"Focus on sensory details and human moments. No sound effects."
     )
-    return prompt_text
 
-def build_optimized_elevenlabs_prompt(narration_text: str, sound_context: str) -> str:
+
+def build_elevenlabs_prompt(narration_text: str, sound_context: str) -> str:
+    """Optimized prompt for TTS with emotional delivery"""
     return f"""<voice>{narration_text}</voice>
 <style>
-Deliver this urban narrative with genuine emotion and theatrical flair. Use dynamic pacing: speak deliberately during descriptive passages to build atmosphere, then shift to natural conversational energy for any dialogue. Infuse warmth and immersion into environmental descriptions. For bracketed emotional cues like [enthusiastically] or [thoughtfully], embody that emotion fully - don't just read the word, become it. Vary your pitch and intensity to match the scene's energy. Make the listener feel present in this urban moment.
+Deliver with genuine emotion and dynamic pacing. For bracketed cues like [enthusiastically], 
+embody the emotion fully. Vary pitch and intensity to match the scene's energy.
 </style>
 <context>
-This is a vivid narration of an urban soundscape featuring: {sound_context}. The scene should feel cinematic and emotionally resonant, transporting the listener into a real city moment with all its texture and humanity.
+Urban soundscape featuring: {sound_context}. Make it cinematic and emotionally resonant.
 </context>"""
 
-async def generate_narrative_text(sound_types: List[str], transcript: str) -> Tuple[str, str]:
+
+# ============= CORE PROCESSING FUNCTIONS =============
+
+async def transcribe_audio(audio_path: str) -> str:
+    """
+    Transcribe audio with Whisper, then immediately unload model.
+    """
+    model = await load_whisper_model()
+    
+    if model is None:
+        logger.warning("Whisper unavailable - using fallback")
+        return "(transcription unavailable)"
+    
+    try:
+        result = model.transcribe(audio_path, fp16=False)  # fp16=False for CPU
+        transcript = result["text"].strip() or "(no speech detected)"
+        logger.info(f"Transcribed: {transcript}")
+        return transcript
+        
+    except Exception as e:
+        logger.error(f"Transcription error: {e}")
+        return "(transcription failed)"
+        
+    finally:
+        # CRITICAL: Unload Whisper immediately after use
+        unload_model("whisper")
+        gc.collect()
+
+
+async def detect_sounds(audio_path: str) -> List[str]:
+    """
+    Detect sounds with PANNs, then immediately unload model.
+    """
+    model = await load_panns_model()
+    
+    try:
+        # Load and preprocess audio
+        waveform, sr = torchaudio.load(audio_path)
+        
+        if sr != 32000:
+            waveform = torchaudio.transforms.Resample(orig_freq=sr, new_freq=32000)(waveform)
+        
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+        
+        waveform = waveform.to(DEVICE)
+        
+        # Inference
+        from panns_inference import labels
+        clipwise_output, _ = model.inference(waveform)
+        clipwise_output = clipwise_output.squeeze()
+        
+        # Get top 5 sounds
+        top_indices = clipwise_output.argsort()[-5:][::-1]
+        sound_types = [labels[int(i)] for i in top_indices]
+        
+        logger.info(f"Detected sounds: {sound_types}")
+        return sound_types
+        
+    finally:
+        # CRITICAL: Unload PANNs immediately after use
+        unload_model("panns")
+        gc.collect()
+
+
+async def generate_narrative(sound_types: List[str], transcript: str) -> Tuple[str, str]:
+    """Generate narrative text using Groq LLM"""
     try:
         sound_context = ", ".join(sound_types)
-        logger.info(f"Generating narrative for sounds: {sound_context}")
+        
         if not GROQ_API_KEY:
             raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
+        
         client = Groq(api_key=GROQ_API_KEY)
-        prompt = build_optimized_groq_prompt(sound_context, transcript)
+        prompt = build_groq_prompt(sound_context, transcript)
+        
         response = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             **GROQ_MODEL_CONFIG
         )
+        
         narration = response.choices[0].message.content.strip()
+        
         if not narration:
             raise ValueError("GROQ returned empty narration")
+        
         logger.info(f"Generated narration ({len(narration)} chars)")
         return narration, sound_context
+        
     except Exception as e:
-        logger.error(f"GROQ API error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate narration: {str(e)}")
+        logger.error(f"GROQ API error: {e}")
+        raise HTTPException(status_code=500, detail=f"Narrative generation failed: {e}")
+
 
 async def synthesize_audio(narration_text: str, sound_context: str, output_filename: str) -> str:
+    """Synthesize audio with ElevenLabs"""
     try:
         if not ELEVENLABS_API_KEY:
             raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY not configured")
-        elevenlabs_prompt = build_optimized_elevenlabs_prompt(narration_text, sound_context)
+        
+        elevenlabs_prompt = build_elevenlabs_prompt(narration_text, sound_context)
+        
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_V3_CONFIG['voice_id']}"
         headers = {
             "xi-api-key": ELEVENLABS_API_KEY,
@@ -191,104 +350,86 @@ async def synthesize_audio(narration_text: str, sound_context: str, output_filen
             "voice_settings": ELEVENLABS_V3_CONFIG["voice_settings"],
             "output_format": ELEVENLABS_V3_CONFIG["output_format"]
         }
-        logger.info(f"Synthesizing speech with V3 (voice: {ELEVENLABS_V3_CONFIG['voice_id']})")
-        tts_response = requests.post(url, headers=headers, json=payload, timeout=45)
-        if tts_response.status_code != 200:
-            error_detail = tts_response.text
-            logger.error(f"ElevenLabs API error [{tts_response.status_code}]: {error_detail}")
+        
+        logger.info("Synthesizing speech with ElevenLabs V3")
+        
+        response = requests.post(url, headers=headers, json=payload, timeout=45)
+        
+        if response.status_code != 200:
             raise HTTPException(
-                status_code=tts_response.status_code,
-                detail=f"ElevenLabs TTS failed: {error_detail}"
+                status_code=response.status_code,
+                detail=f"ElevenLabs TTS failed: {response.text}"
             )
-        logger.info(f"TTS synthesis successful ({len(tts_response.content)} bytes)")
+        
         output_path = f"audio/{output_filename}"
-        temp_path = f"audio/temp_{output_filename}"
-        with open(temp_path, "wb") as f:
-            f.write(tts_response.content)
-        logger.info("Applying audio normalization and enhancement")
-        audio = AudioSegment.from_mp3(temp_path)
-        audio = audio + 6
-        audio = audio.normalize()
-        audio = audio.fade_in(100).fade_out(200)
-        audio.export(output_path, format="mp3", bitrate="192k", parameters=["-q:a", "0"])
-        Path(temp_path).unlink(missing_ok=True)
-        logger.info(f"Audio exported to {output_path}")
+        
+        # Direct write (skip pydub if memory is tight)
+        with open(output_path, "wb") as f:
+            f.write(response.content)
+        
+        logger.info(f"Audio saved to {output_path}")
         return output_path
+        
     except requests.exceptions.Timeout:
-        logger.error("ElevenLabs API timeout")
-        raise HTTPException(status_code=504, detail="Text-to-speech service timed out. Please try again.")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"ElevenLabs request error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"TTS request failed: {str(e)}")
+        raise HTTPException(status_code=504, detail="TTS service timed out")
     except Exception as e:
-        logger.error(f"Audio processing error: {str(e)}")
-        Path(f"audio/temp_{output_filename}").unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail=f"Audio processing failed: {str(e)}")
+        logger.error(f"TTS error: {e}")
+        raise HTTPException(status_code=500, detail=f"Audio synthesis failed: {e}")
 
-async def process_audio_file_streaming(audio_path: str, output_filename: str):
+
+# ============= STREAMING PROCESSOR =============
+
+async def process_audio_streaming(audio_path: str, output_filename: str):
+    """
+    Main processing pipeline with streaming updates.
+    Optimized for memory efficiency.
+    """
     try:
+        import json
+        
+        # Validate input
         if not os.path.exists(audio_path):
-            logger.error(f"Upload file not found: {audio_path}")
-            yield json.dumps({"stage": "error", "message": "Upload file not found", "sounds": [], "progress": 0}) + "\n"
+            yield json.dumps({"stage": "error", "message": "Upload failed", "sounds": [], "progress": 0}) + "\n"
             return
-        file_size = os.path.getsize(audio_path)
-        logger.info(f"Processing audio: {audio_path} ({file_size} bytes)")
-        yield json.dumps({"stage": "loading", "message": "🎧 Analyzing your audio...", "sounds": [], "progress": 10}) + "\n"
-        await asyncio.sleep(0.5)
-        yield json.dumps({"stage": "transcribing", "message": "👂 Listening to speech...", "sounds": [], "progress": 20}) + "\n"
-        whisper_model = await load_whisper_lazy()
-        if whisper_model is None:
-            logger.warning("Whisper unavailable - using fallback transcript")
-            transcript = "(speech detected but transcription unavailable)"
-            yield json.dumps({"stage": "transcribe_warn", "message": "⚠️ Transcription fallback", "sounds": [], "progress": 30}) + "\n"
-        else:
-            try:
-                result = whisper_model.transcribe(audio_path)
-                transcript = result["text"].strip() or "(no speech detected)"
-                logger.info(f"Transcribed: {transcript}")
-                yield json.dumps({"stage": "transcribe_complete", "message": "✅ Speech transcribed", "sounds": [], "progress": 30}) + "\n"
-            except Exception as e:
-                logger.error(f"Transcription error: {e}")
-                transcript = "(transcription failed)"
-                yield json.dumps({"stage": "transcribe_warn", "message": "⚠️ Transcription failed", "sounds": [], "progress": 30}) + "\n"
+        
+        yield json.dumps({"stage": "loading", "message": "🎧 Loading audio...", "sounds": [], "progress": 10}) + "\n"
         await asyncio.sleep(0.3)
-        yield json.dumps({"stage": "extracting", "message": "🔊 Extracting sound patterns...", "sounds": [], "progress": 40}) + "\n"
-        waveform, sr = torchaudio.load(audio_path)
-        if sr != 32000:
-            waveform = torchaudio.transforms.Resample(orig_freq=sr, new_freq=32000)(waveform)
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
-        waveform = waveform.to(device)
-        await asyncio.sleep(0.5)
-        yield json.dumps({"stage": "identifying", "message": "🎵 Identifying urban soundscapes...", "sounds": [], "progress": 50}) + "\n"
-        clipwise_output, _ = models['panns'].inference(waveform)
-        clipwise_output = clipwise_output.squeeze()
-        top_indices = clipwise_output.argsort()[-5:][::-1]
-        sound_types = [labels[int(i)] for i in top_indices]
-        logger.info(f"Detected sounds: {sound_types}")
-        yield json.dumps({"stage": "sounds_detected", "message": "✨ Sounds detected!", "sounds": sound_types, "progress": 60}) + "\n"
+        
+        # STEP 1: Transcribe (Whisper loaded/unloaded here)
+        yield json.dumps({"stage": "transcribing", "message": "👂 Transcribing speech...", "sounds": [], "progress": 25}) + "\n"
+        transcript = await transcribe_audio(audio_path)
+        
+        yield json.dumps({"stage": "transcribe_complete", "message": "✅ Speech captured", "sounds": [], "progress": 40}) + "\n"
+        await asyncio.sleep(0.3)
+        
+        # STEP 2: Detect sounds (PANNs loaded/unloaded here)
+        yield json.dumps({"stage": "extracting", "message": "🔊 Analyzing sounds...", "sounds": [], "progress": 55}) + "\n"
+        sound_types = await detect_sounds(audio_path)
+        
+        yield json.dumps({"stage": "sounds_detected", "message": "✨ Sounds identified!", "sounds": sound_types, "progress": 70}) + "\n"
+        
+        # Clean up input file ASAP
         try:
             Path(audio_path).unlink()
-            logger.info(f"Cleaned up input file: {audio_path}")
+            logger.info(f"Input file deleted: {audio_path}")
         except Exception as e:
-            logger.warning(f"Could not delete input file: {e}")
-        await asyncio.sleep(0.8)
-        yield json.dumps({"stage": "ai_processing", "message": "🤖 Crafting cinematic narrative...", "sounds": sound_types, "progress": 70}) + "\n"
-        await asyncio.sleep(0.5)
-        narration, sound_context = await generate_narrative_text(sound_types, transcript)
-        logger.info(f"Narration generated: {narration[:100]}...")
-        yield json.dumps({"stage": "narrating", "message": "✍️ Preparing emotional delivery...", "sounds": sound_types, "progress": 80}) + "\n"
-        await asyncio.sleep(0.5)
-        yield json.dumps({"stage": "voice_generation", "message": "🎙️ Generating expressive narration...", "sounds": sound_types, "progress": 90}) + "\n"
+            logger.warning(f"Could not delete input: {e}")
+        
+        await asyncio.sleep(0.3)
+        
+        # STEP 3: Generate narrative (API call)
+        yield json.dumps({"stage": "ai_processing", "message": "🤖 Crafting narrative...", "sounds": sound_types, "progress": 80}) + "\n"
+        narration, sound_context = await generate_narrative(sound_types, transcript)
+        
+        # STEP 4: Synthesize voice (API call)
+        yield json.dumps({"stage": "voice_generation", "message": "🎙️ Generating voice...", "sounds": sound_types, "progress": 90}) + "\n"
         output_path = await synthesize_audio(narration, sound_context, output_filename)
-        yield json.dumps({"stage": "finalizing", "message": "✨ Adding final touches...", "sounds": sound_types, "progress": 95}) + "\n"
-        await asyncio.sleep(0.5)
-        if not os.path.exists(output_path):
-            logger.error(f"Output audio file not created: {output_path}")
-            yield json.dumps({"stage": "error", "message": "Failed to create audio file", "sounds": [], "progress": 0}) + "\n"
-            return
+        
+        yield json.dumps({"stage": "finalizing", "message": "✨ Finalizing...", "sounds": sound_types, "progress": 95}) + "\n"
+        await asyncio.sleep(0.3)
+        
+        # Complete
         audio_url = f"/audio/{output_filename}"
-        logger.info(f"Audio available at: {audio_url}")
         yield json.dumps({
             "stage": "complete",
             "message": "✅ Complete!",
@@ -298,94 +439,109 @@ async def process_audio_file_streaming(audio_path: str, output_filename: str):
             "audio_url": audio_url,
             "transcript": transcript
         }) + "\n"
+        
     except Exception as e:
-        logger.error(f"Streaming processing error: {str(e)}", exc_info=True)
+        logger.error(f"Processing error: {e}", exc_info=True)
         yield json.dumps({"stage": "error", "message": f"❌ Error: {str(e)}", "sounds": [], "progress": 0}) + "\n"
+
+
+# ============= API ENDPOINTS =============
 
 @app.post("/process-audio-stream")
 async def process_audio_stream(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    """Main endpoint for audio processing with streaming updates"""
+    
+    # Validate file type
     if not file.filename.endswith((".mp3", ".wav")):
         raise HTTPException(status_code=400, detail="Only MP3 or WAV files allowed")
+    
+    # Generate unique filenames
     unique_id = str(uuid.uuid4())
     safe_filename = re.sub(r'[^a-zA-Z0-9._-]', '_', file.filename)
     output_filename = f"output_{unique_id}.mp3"
     audio_path = f"audio/upload_{unique_id}_{safe_filename}"
+    
     try:
+        # Save uploaded file
         content = await file.read()
         with open(audio_path, "wb") as f:
             f.write(content)
+        
         logger.info(f"Uploaded {len(content)} bytes to {audio_path}")
+        
+        # Schedule output cleanup (5 minutes)
         async def cleanup_output():
             await asyncio.sleep(300)
             output_path = f"audio/{output_filename}"
             if os.path.exists(output_path):
                 Path(output_path).unlink()
                 logger.info(f"Output cleaned: {output_path}")
+        
         background_tasks.add_task(cleanup_output)
+        
+        # Return streaming response
         return StreamingResponse(
-            process_audio_file_streaming(audio_path, output_filename),
+            process_audio_streaming(audio_path, output_filename),
             media_type="text/event-stream"
         )
+        
     except Exception as e:
-        logger.error(f"Streaming endpoint error: {str(e)}", exc_info=True)
+        logger.error(f"Upload error: {e}")
         Path(audio_path).unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
+
 
 @app.get("/audio/{filename}")
 async def serve_audio(filename: str):
-    """Serve audio file with proper headers for streaming playback"""
+    """Serve generated audio files"""
     file_path = f"audio/{filename}"
-    if not os.path.exists(file_path):
-        logger.error(f"Audio file not found: {file_path}")
-        raise HTTPException(status_code=404, detail="Audio file not found")
-    logger.info(f"Serving audio file: {file_path}")
     
-    # Return with explicit headers for audio streaming
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    
     return FileResponse(
-        file_path, 
+        file_path,
         media_type="audio/mpeg",
         headers={
             "Accept-Ranges": "bytes",
             "Cache-Control": "no-cache",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Expose-Headers": "*"
+            "Access-Control-Allow-Origin": "*"
         }
     )
 
+
 @app.get("/")
 async def root():
+    """API root with status information"""
     return {
         "status": "healthy",
-        "message": "Urban Sound Narrative API v2.0.5 (Enhanced Audio Streaming)",
-        "version": "2.0.5",
+        "message": "Urban Sound Narrative API v3.0.0",
+        "version": "3.0.0",
         "optimizations": [
-            "GROQ Llama 3.3 70B with creative parameters",
-            "ElevenLabs V3 Alpha emotional prompting",
-            "Enhanced audio post-processing",
-            "Lazy Whisper loading for network resilience",
-            "Filename sanitization for FFmpeg compatibility",
-            "Fixed processing order: transcribe → sounds → delete input",
-            "Enhanced CORS headers for audio streaming"
-        ]
+            "Lazy model loading with auto-unload",
+            f"Whisper {WHISPER_MODEL_SIZE} model (minimal footprint)",
+            "PANNs on-demand loading",
+            "Aggressive garbage collection",
+            "CPU-only inference",
+            "Streaming responses"
+        ],
+        "memory": "Optimized for 512MB-1GB RAM environments"
     }
+
 
 @app.get("/health")
 async def health_check():
-    whisper_status = "loaded" if models.get('whisper') is not None else "lazy-pending"
+    """Health check endpoint"""
     return {
         "status": "healthy",
-        "models_loaded": len([k for k, v in models.items() if v is not None]),
-        "device": device,
+        "whisper_cached": model_cache["whisper"] is not None,
+        "panns_cached": model_cache["panns"] is not None,
+        "device": DEVICE,
+        "whisper_model": WHISPER_MODEL_SIZE,
         "groq_configured": bool(GROQ_API_KEY),
-        "groq_model": GROQ_MODEL_CONFIG["model"],
-        "elevenlabs_configured": bool(ELEVENLABS_API_KEY),
-        "elevenlabs_model": ELEVENLABS_V3_CONFIG["model_id"],
-        "voice_id": ELEVENLABS_V3_CONFIG["voice_id"],
-        "whisper_status": whisper_status
+        "elevenlabs_configured": bool(ELEVENLABS_API_KEY)
     }
 
-os.makedirs("audio", exist_ok=True)
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=7860)
+# Ensure audio directory exists
+os.makedirs("audio", exist_ok=True)
