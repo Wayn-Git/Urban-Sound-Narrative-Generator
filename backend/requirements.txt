@@ -2,10 +2,9 @@ fastapi
 uvicorn[standard]
 pydantic
 python-dotenv
-torch --index-url https://download.pytorch.org/whl/cpu
+torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu
 torchaudio --index-url https://download.pytorch.org/whl/cpu
 openai-whisper
 panns-inference
 pydub
 requests
-groq
