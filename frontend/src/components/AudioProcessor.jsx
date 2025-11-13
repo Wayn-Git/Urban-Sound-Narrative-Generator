@@ -3,9 +3,11 @@ import { Mic, Upload, Play, Pause, Copy, Download, ArrowRight, ArrowLeft, Sparkl
 
 // IMPORTANT: Update this URL with your ngrok URL from Colab
 // Copy the URL that looks like: https://xxxxxxxxxxxx.ngrok-free.app
-// const API_URL = import.meta.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-const API_URL = 'https://1ed8835adb5d.ngrok-free.app';
+// const API_URL = import.meta.env.VITE_API_URL;
+
+console.log("API URL:", API_URL);
 
 
 function SoundNarrativeGenerator() {
