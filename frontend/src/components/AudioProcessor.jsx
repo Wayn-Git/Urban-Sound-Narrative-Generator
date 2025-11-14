@@ -222,7 +222,7 @@ playAudio();
               addProcessingLog('Connecting to Groq LLM API...');
               addProcessingLog('Generating narrative with Llama 3.3 70B...');
             } else if (data.stage === 'voice_generation') {
-              addProcessingLog('Connecting to ElevenLabs TTS API...');
+              addProcessingLog('Connecting to EOpen Source TTS API...');
               addProcessingLog('Synthesizing voice narration...');
             } else if (data.stage === 'finalizing') {
               addProcessingLog('Normalizing audio levels...');
@@ -384,7 +384,7 @@ playAudio();
                 <div className="inline-block mb-6">
                   <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.04] backdrop-blur-sm border border-white/[0.06]">
                     <div className="w-1.5 h-1.5 rounded-full bg-white/60 animate-pulse" />
-                    <span className="text-xs font-medium text-white/60 tracking-wide">Powered By ElevenLabs & Groq</span>
+                    <span className="text-xs font-medium text-white/60 tracking-wide">Powered By Not Eleven Labs & Groq</span>
                   </div>
                 </div>
                 <h2 className="text-5xl sm:text-6xl lg:text-7xl xl:text-8xl font-bold tracking-tight mb-6 text-white/95 leading-[1.1]">
