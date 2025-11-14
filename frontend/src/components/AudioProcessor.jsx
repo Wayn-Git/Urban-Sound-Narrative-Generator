@@ -117,7 +117,8 @@ playAudio();
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -128,8 +129,10 @@ playAudio();
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        const recordedFile = new File([audioBlob], `recording_${Date.now()}.wav`, { type: 'audio/wav' });
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+
+       const recordedFile = new File([audioBlob], `recording_${Date.now()}.webm`, { type: 'audio/webm' });
+
         setFile(recordedFile);
         setFileName(recordedFile.name);
         stream.getTracks().forEach(track => track.stop());
