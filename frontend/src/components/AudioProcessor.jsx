@@ -1,16 +1,115 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Upload, Play, Pause, Copy, Download, ArrowRight, ArrowLeft, Sparkles, Loader2, Music2, Car, FootprintsIcon as Footprints, Bell, Bus, ChevronDown, ChevronUp, Code, StopCircle } from 'lucide-react';
+import { 
+  Mic, Upload, Play, Pause, Copy, Download, ArrowRight, 
+  ArrowLeft, Music2, Car, 
+  FootprintsIcon as Footprints, Bell, Bus, Code, StopCircle, Check, Disc3, Zap, RotateCcw, Sparkles, FileAudio
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 
-// IMPORTANT: Update this URL with your ngrok URL from Colab
-// Copy the URL that looks like: https://xxxxxxxxxxxx.ngrok-free.app
+// --- UTILS ---
+function cn(...inputs) {
+  return twMerge(clsx(inputs));
+}
+
+// --- API CONFIG ---
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-// const API_URL = import.meta.env.VITE_API_URL;
+// --- ANIMATION VARIANTS ---
+const fadeInUp = {
+  initial: { opacity: 0, y: 20, filter: 'blur(4px)' },
+  animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
+  exit: { opacity: 0, y: -20, filter: 'blur(4px)' },
+  transition: { duration: 0.6, ease: [0.2, 0.8, 0.2, 1] }
+};
 
-console.log("API URL:", API_URL);
+// --- COMPONENTS ---
 
+const SplashScreen = ({ onComplete }) => {
+  return (
+    <motion.div 
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-[#111010]"
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: 1, ease: "easeInOut" } }}
+    >
+      <div className="relative flex flex-col items-center">
+        {/* Vacuum Tube Warm-up Animation */}
+        <div className="relative w-48 h-48 mb-8 flex items-center justify-center">
+          {/* Filament Glow */}
+          <motion.div 
+            className="absolute inset-0 rounded-full bg-[#C46A29]/20 blur-3xl"
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: [0, 0.6, 0.4], scale: [0.8, 1.2, 1.1] }}
+            transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+          />
+          
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 2, ease: "easeIn" }}
+            className="relative z-10"
+          >
+             <Disc3 className="w-20 h-20 text-[#D9A441] animate-[spin_4s_linear_infinite]" strokeWidth={1} />
+          </motion.div>
+
+          {/* Inner spark */}
+          <motion.div 
+            className="absolute w-full h-1 bg-[#D9A441]/50 blur-sm"
+            initial={{ scaleX: 0, opacity: 0 }}
+            animate={{ scaleX: 1, opacity: 1 }}
+            transition={{ delay: 0.5, duration: 0.5 }}
+          />
+        </div>
+
+        <motion.h1 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5, duration: 1 }}
+          className="text-3xl font-serif tracking-[0.15em] text-[#D9A441] uppercase"
+        >
+          SoundScript
+        </motion.h1>
+        
+        <motion.div 
+          initial={{ width: 0, opacity: 0 }}
+          animate={{ width: "120px", opacity: 1 }}
+          transition={{ delay: 1, duration: 1.5, ease: "easeInOut" }}
+          onAnimationComplete={() => setTimeout(onComplete, 600)}
+          className="h-[2px] bg-gradient-to-r from-transparent via-[#C46A29] to-transparent mt-6"
+        />
+      </div>
+    </motion.div>
+  );
+};
+
+const Button = ({ children, onClick, className, variant = 'primary', disabled, icon: Icon }) => {
+  const baseStyles = "relative flex items-center justify-center gap-3 px-8 py-4 rounded-2xl font-medium text-sm transition-all duration-300 overflow-hidden group backdrop-blur-sm border";
+  
+  const variants = {
+    primary: "bg-[#C46A29] border-[#C46A29] text-[#111010] hover:bg-[#D9A441] hover:border-[#D9A441] hover:shadow-[0_0_30px_-10px_rgba(196,106,41,0.6)] font-semibold tracking-wide",
+    secondary: "bg-[#1c1a1a] border-white/10 text-[#D9A441] hover:bg-[#2B1D13] hover:border-[#D9A441]/30 hover:text-[#FFEBC6]",
+    danger: "bg-[#2B1D13]/50 border-red-900/30 text-red-400 hover:bg-red-900/20",
+    ghost: "border-transparent text-[#8B735B] hover:text-[#EAE0D5] hover:bg-white/5"
+  };
+
+  return (
+    <motion.button
+      whileHover={{ scale: disabled ? 1 : 1.02 }}
+      whileTap={{ scale: disabled ? 1 : 0.98 }}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(baseStyles, variants[variant], disabled && "opacity-40 cursor-not-allowed grayscale", className)}
+    >
+      {Icon && <Icon className="w-4 h-4 relative z-10" strokeWidth={2} />}
+      <span className="relative z-10">{children}</span>
+    </motion.button>
+  );
+};
 
 function SoundNarrativeGenerator() {
+  // --- STATE ---
+  const [showSplash, setShowSplash] = useState(true);
   const [phase, setPhase] = useState('upload');
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState('');
@@ -28,6 +127,7 @@ function SoundNarrativeGenerator() {
   const [processingLogs, setProcessingLogs] = useState([]);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [isCopied, setIsCopied] = useState(false);
   
   const fileInputRef = useRef(null);
   const audioRef = useRef(null);
@@ -35,10 +135,10 @@ function SoundNarrativeGenerator() {
   const audioChunksRef = useRef([]);
   const recordingTimerRef = useRef(null);
 
+  // --- LOGIC ---
   useEffect(() => {
     if (phase === 'narration' && !isPaused && audioRef.current) {
       const audio = audioRef.current;
-      
       const updateTime = () => {
         setCurrentTime(audio.currentTime);
         const sentences = narration.split(/[.!?]+/).filter(s => s.trim());
@@ -48,57 +148,26 @@ function SoundNarrativeGenerator() {
           setCurrentSubtitle(Math.min(subtitleIndex, sentences.length - 1));
         }
       };
-
       audio.addEventListener('timeupdate', updateTime);
       const playAudio = async () => {
-  try {
-    console.log('Audio URL:', audio.src);
-    console.log('Audio ready state:', audio.readyState);
-    
-    // Wait for audio to be ready
-    if (audio.readyState < 3) {
-      console.log('Waiting for audio to load...');
-      await new Promise((resolve) => {
-        audio.addEventListener('canplay', resolve, { once: true });
-      });
-    }
-    
-    await audio.play();
-    console.log('Audio playing successfully');
-  } catch (err) {
-    console.error('Audio play error:', err);
-    console.error('Error details:', {
-      name: err.name,
-      message: err.message,
-      code: err.code
-    });
-  }
-};
-
-playAudio();
-
-      return () => {
-        audio.removeEventListener('timeupdate', updateTime);
+        try {
+          if (audio.readyState < 3) await new Promise((r) => audio.addEventListener('canplay', r, { once: true }));
+          await audio.play();
+        } catch (err) { console.error(err); }
       };
+      playAudio();
+      return () => audio.removeEventListener('timeupdate', updateTime);
     }
   }, [phase, isPaused, narration]);
 
   useEffect(() => {
     if (isRecording) {
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1);
-      }, 1000);
+      recordingTimerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
     } else {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-      }
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       setRecordingTime(0);
     }
-    return () => {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-      }
-    };
+    return () => { if (recordingTimerRef.current) clearInterval(recordingTimerRef.current); };
   }, [isRecording]);
 
   const handleFileChange = (e) => {
@@ -118,33 +187,20 @@ playAudio();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-
-       const recordedFile = new File([audioBlob], `recording_${Date.now()}.webm`, { type: 'audio/webm' });
-
+        const recordedFile = new File([audioBlob], `recording_${Date.now()}.webm`, { type: 'audio/webm' });
         setFile(recordedFile);
         setFileName(recordedFile.name);
         stream.getTracks().forEach(track => track.stop());
       };
-
       mediaRecorder.start();
       setIsRecording(true);
       setError('');
-    } catch (err) {
-      console.error('Error accessing microphone:', err);
-      setError('Could not access microphone. Please check permissions.');
-    }
+    } catch (err) { setError('Could not access microphone. Check permissions.'); }
   };
 
   const stopRecording = () => {
@@ -154,16 +210,17 @@ playAudio();
     }
   };
 
-  const addProcessingLog = (message) => {
-    setProcessingLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+  const addProcessingLog = (msg) => setProcessingLogs(p => [...p, `${new Date().toLocaleTimeString()}: ${msg}`]);
+
+  const handleCopy = () => {
+    if (!narration) return;
+    navigator.clipboard.writeText(narration);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
   };
 
   const handleGenerate = async () => {
-    if (!file) {
-      setError('Please select a file or record audio first');
-      return;
-    }
-
+    if (!file) { setError('Please select a file or record audio first'); return; }
     setPhase('processing');
     setProgress(0);
     setError('');
@@ -175,19 +232,8 @@ playAudio();
     formData.append('file', file);
 
     try {
-      addProcessingLog('Initializing audio processing pipeline...');
-      const response = await fetch(`${API_URL}/process-audio-stream`, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'ngrok-skip-browser-warning': 'true'
-        }
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Server error (${response.status}): ${errorText}`);
-      }
+      const response = await fetch(`${API_URL}/process-audio-stream`, { method: 'POST', body: formData });
+      if (!response.ok) throw new Error(`Server error (${response.status})`);
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -195,69 +241,31 @@ playAudio();
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
-
         const chunk = decoder.decode(value);
         const lines = chunk.split('\n').filter(line => line.trim());
 
         for (const line of lines) {
           try {
             const data = JSON.parse(line);
-            
             setProgress(data.progress || 0);
             setProcessingMessage(data.message || '');
-            
-            if (data.stage === 'loading') {
-              addProcessingLog('Loading audio file and validating format...');
-              addProcessingLog('Resampling audio to 32kHz mono channel...');
-            } else if (data.stage === 'extracting') {
-              addProcessingLog('Running PANNs audio tagging model...');
-              addProcessingLog('Extracting acoustic features from waveform...');
-            } else if (data.stage === 'identifying') {
-              addProcessingLog('Analyzing frequency patterns...');
-              addProcessingLog('Classifying sound events...');
-            } else if (data.stage === 'sounds_detected') {
-              addProcessingLog(`Detected ${data.sounds.length} distinct sound classes`);
-              data.sounds.forEach(sound => addProcessingLog(`  → ${sound}`));
-            } else if (data.stage === 'transcribing') {
-              addProcessingLog('Loading Whisper speech recognition model...');
-              addProcessingLog('Transcribing audio content...');
-            } else if (data.stage === 'ai_processing') {
-              addProcessingLog('Connecting to Groq LLM API...');
-              addProcessingLog('Generating narrative with Llama 3.3 70B...');
-            } else if (data.stage === 'voice_generation') {
-              addProcessingLog('Connecting to EOpen Source TTS API...');
-              addProcessingLog('Synthesizing voice narration...');
-            } else if (data.stage === 'finalizing') {
-              addProcessingLog('Normalizing audio levels...');
-              addProcessingLog('Encoding to MP3 format...');
-            }
-            
-            if (data.sounds && data.sounds.length > 0) {
-              setDetectedSounds(data.sounds);
-            }
-            
+            if (data.message) addProcessingLog(data.message);
+            if (data.sounds?.length > 0) setDetectedSounds(data.sounds);
             if (data.stage === 'complete') {
               setNarration(data.narration);
               setAudioUrl(`${API_URL}${data.audio_url}`);
               setTranscript(data.transcript);
-              addProcessingLog('Processing complete! Audio ready for playback.');
-              setTimeout(() => setPhase('textOutput'), 600);
+              setTimeout(() => setPhase('textOutput'), 800);
             }
-            
             if (data.stage === 'error') {
               setError(data.message);
-              addProcessingLog(`ERROR: ${data.message}`);
               setPhase('upload');
             }
-          } catch (e) {
-            console.error('Error parsing JSON:', e, line);
-          }
+          } catch (e) { console.error(e); }
         }
       }
     } catch (err) {
-      console.error('Error:', err);
-      setError(err.message || 'An error occurred while processing the audio');
-      addProcessingLog(`FATAL ERROR: ${err.message}`);
+      setError(err.message || 'An error occurred');
       setPhase('upload');
     }
   };
@@ -268,49 +276,8 @@ playAudio();
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  const formatRecordingTime = (sec) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const handleCopy = (e) => {
-    navigator.clipboard.writeText(narration);
-    const button = e.target.closest('button');
-    const span = button.querySelector('span');
-    if (span) {
-      const originalText = span.textContent;
-      span.textContent = 'Copied!';
-      setTimeout(() => {
-        span.textContent = originalText;
-      }, 2000);
-    }
-  };
-
-  const handleExport = () => {
-    const blob = new Blob([narration], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'narrative.txt';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleDownloadAudio = () => {
-    if (audioUrl) {
-      const a = document.createElement('a');
-      a.href = audioUrl;
-      a.download = 'narration.mp3';
-      a.click();
-    }
-  };
-
   const resetApp = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-    }
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
     setPhase('upload');
     setFile(null);
     setFileName('');
@@ -323,547 +290,452 @@ playAudio();
     setProcessingLogs([]);
     setTranscript('');
     setProgress(0);
-    setProcessingMessage('');
-    setShowProcessingDetails(false);
   };
 
-  const getSoundIcon = (soundLabel) => {
-    const lowerLabel = soundLabel.toLowerCase();
-    if (lowerLabel.includes('car') || lowerLabel.includes('vehicle') || lowerLabel.includes('traffic')) {
-      return Car;
-    } else if (lowerLabel.includes('foot') || lowerLabel.includes('walk')) {
-      return Footprints;
-    } else if (lowerLabel.includes('bell') || lowerLabel.includes('siren') || lowerLabel.includes('alarm')) {
-      return Bell;
-    } else if (lowerLabel.includes('bus')) {
-      return Bus;
-    }
+  const getSoundIcon = (label) => {
+    const l = label.toLowerCase();
+    if (l.includes('car') || l.includes('traffic')) return Car;
+    if (l.includes('foot') || l.includes('walk')) return Footprints;
+    if (l.includes('bell') || l.includes('alarm')) return Bell;
+    if (l.includes('bus')) return Bus;
     return Music2;
   };
 
   const narrativeSentences = narration ? narration.split(/[.!?]+/).filter(s => s.trim()) : [];
 
-  return (
-    <div className="min-h-screen bg-black text-white relative overflow-hidden" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }}>
-      {/* Blur Gradient Background */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[10%] left-[15%] w-[500px] h-[500px] bg-white/[0.03] rounded-full blur-[120px] animate-float" />
-        <div className="absolute bottom-[15%] right-[10%] w-[600px] h-[600px] bg-white/[0.02] rounded-full blur-[100px] animate-float-delayed" />
-        <div className="absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-white/[0.015] rounded-full blur-[140px] animate-pulse-slow" />
+return (
+    // Base: Off-Black with Espresso Brown undertones
+    <div className="min-h-screen bg-[#111010] text-[#EAE0D5] font-sans overflow-hidden selection:bg-[#C46A29]/30 selection:text-white">
+      
+      <AnimatePresence mode='wait'>
+        {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+      </AnimatePresence>
+
+      {/* Analog Texture Background */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        {/* Film Grain Texture */}
+        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.08] brightness-100 contrast-150 mix-blend-overlay"></div>
+        
+        {/* Warm Ambient Lighting */}
+        <motion.div 
+          animate={{ opacity: [0.15, 0.25, 0.15] }}
+          transition={{ duration: 10, repeat: Infinity }}
+          className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[80vw] h-[50vw] bg-[#C46A29]/10 rounded-full blur-[120px]" 
+        />
+        <div className="absolute bottom-0 left-0 w-full h-full bg-gradient-to-t from-[#2B1D13] via-[#111010]/50 to-transparent" />
       </div>
 
       {/* Header */}
-      <header className="relative z-10 px-4 sm:px-6 lg:px-8 py-6 border-b border-white/[0.06]">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-white/[0.08] backdrop-blur-sm flex items-center justify-center border border-white/[0.06]">
-              <Music2 className="w-5 h-5 text-white/90" strokeWidth={2} />
+      {!showSplash && (
+        <motion.header 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="relative z-50 px-6 py-8"
+        >
+          <div className="max-w-6xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3 group cursor-default">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#2B1D13] to-[#111010] border border-white/10 flex items-center justify-center shadow-lg">
+                <Zap className="w-3 h-3 text-[#D9A441] fill-current" />
+              </div>
+              <span className="text-sm font-serif font-semibold tracking-widest text-[#8B735B] group-hover:text-[#EAE0D5] transition-colors">SoundScript</span>
             </div>
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight text-white/95">
-                Sound Script
-              </h1>
-              <p className="text-xs text-white/40 font-medium">AI-Powered Storytelling</p>
-            </div>
+            
+            {/* FIXED START OVER BUTTON */}
+            {phase !== 'upload' && (
+              <motion.button
+                whileHover={{ scale: 1.05, borderColor: "#D9A441" }}
+                whileTap={{ scale: 0.95 }}
+                onClick={resetApp}
+                className="flex items-center gap-2 px-4 py-2 rounded-full border border-[#D9A441]/30 bg-[#2B1D13]/50 text-[#D9A441] text-xs font-medium uppercase tracking-wider transition-colors hover:bg-[#2B1D13]"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Start Over
+              </motion.button>
+            )}
           </div>
-          <button
-            onClick={resetApp}
-            className="group flex items-center gap-2 h-9 px-4 rounded-lg bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-200 cursor-pointer"
-          >
-            <Sparkles className="w-4 h-4 text-white/70 group-hover:text-white/90 transition-colors" strokeWidth={2} />
-            <span className="text-sm font-medium text-white/80 group-hover:text-white/95 transition-colors">New Project</span>
-          </button>
-        </div>
-      </header>
+        </motion.header>
+      )}
 
-      {/* Main Content */}
-      <main className="relative z-10 px-4 sm:px-6 lg:px-8 py-12 sm:py-16 lg:py-20">
-        <div className="max-w-5xl mx-auto">
-          
-          {/* UPLOAD PHASE */}
-          {phase === 'upload' && (
-            <div className="animate-fade-in">
-              <div className="text-center mb-12 sm:mb-16">
-                <div className="inline-block mb-6">
-                  <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.04] backdrop-blur-sm border border-white/[0.06]">
-                    <div className="w-1.5 h-1.5 rounded-full bg-white/60 animate-pulse" />
-                    <span className="text-xs font-medium text-white/60 tracking-wide">Powered By Not Eleven Labs & Groq</span>
-                  </div>
-                </div>
-                <h2 className="text-5xl sm:text-6xl lg:text-7xl xl:text-8xl font-bold tracking-tight mb-6 text-white/95 leading-[1.1]">
-                  Transform Sound<br/>Into Story
-                </h2>
-                <p className="text-lg sm:text-xl text-white/50 mb-4 max-w-2xl mx-auto font-medium">
-                  Upload any audio and watch AI craft immersive narratives
-                </p>
-                <p className="text-sm text-white/30 max-w-xl mx-auto">
-                  From bustling streets to tranquil nature—every sound becomes a vivid tale
-                </p>
-              </div>
-
-              {/* Waveform Visualizer Card */}
-              <div className="group relative mb-10 sm:mb-12">
-                <div className="absolute inset-0 bg-white/[0.02] rounded-3xl blur-xl group-hover:blur-2xl transition-all duration-500" />
-                <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8 sm:p-12 overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                  <div className="relative flex h-48 sm:h-56 items-center justify-center gap-1.5 sm:gap-2">
-                    {[...Array(25)].map((_, i) => (
-                      <div
-                        key={i}
-                        className="w-1 sm:w-1.5 rounded-full bg-white/70 animate-wave"
-                        style={{
-                          height: `${Math.random() * 60 + 20}%`,
-                          animationDelay: `${i * 0.08 - 1}s`,
-                          animationDuration: '2s'
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Upload Controls */}
-              <div className="mb-10 sm:mb-12 flex flex-col items-center gap-6 sm:flex-row sm:justify-center">
-                {!isRecording ? (
-                  <button 
-                    onClick={startRecording}
-                    className="group relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white/[0.08] backdrop-blur-sm border border-white/[0.1] hover:bg-white/[0.12] hover:border-white/[0.14] transition-all duration-300 hover:scale-105 cursor-pointer"
-                  >
-                    <Mic className="w-8 h-8 text-white/80 group-hover:text-white/95 transition-colors" strokeWidth={2} />
-                  </button>
-                ) : (
-                  <div className="flex flex-col items-center gap-3">
-                    <button 
-                      onClick={stopRecording}
-                      className="group relative flex h-20 w-20 items-center justify-center rounded-2xl bg-red-500/20 backdrop-blur-sm border border-red-500/30 hover:bg-red-500/30 hover:border-red-500/40 transition-all duration-300 animate-pulse cursor-pointer"
-                    >
-                      <StopCircle className="w-8 h-8 text-red-400" strokeWidth={2} fill="currentColor" />
-                    </button>
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/10 border border-red-500/20">
-                      <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
-                      <span className="text-sm font-mono text-red-300">{formatRecordingTime(recordingTime)}</span>
-                    </div>
-                  </div>
-                )}
-                
-                <div className="flex items-center gap-4">
-                  <div className="h-px w-12 bg-white/[0.1]" />
-                  <span className="text-xs font-semibold uppercase tracking-widest text-white/30">or</span>
-                  <div className="h-px w-12 bg-white/[0.1]" />
-                </div>
-
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isRecording}
-                  className="group relative flex h-16 w-full max-w-sm items-center justify-center gap-3 rounded-2xl bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+      {/* Main Layout */}
+      {!showSplash && (
+        <main className="relative z-10 px-6 pb-20 pt-8 min-h-[80vh] flex flex-col justify-center">
+          <div className="max-w-4xl mx-auto w-full">
+            
+            <AnimatePresence mode="wait">
+              
+              {/* PHASE 1: UPLOAD */}
+              {phase === 'upload' && (
+                <motion.div 
+                  key="upload"
+                  variants={fadeInUp}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="w-full grid md:grid-cols-5 gap-12 items-center"
                 >
-                  <Upload className="w-5 h-5 text-white/70 group-hover:text-white/90 transition-colors" strokeWidth={2} />
-                  <span className="text-base font-medium text-white/80 group-hover:text-white/95 transition-colors truncate px-2">
-                    {fileName || 'Choose Audio File'}
-                  </span>
-                  {fileName && <div className="w-2 h-2 rounded-full bg-white/60" />}
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".mp3,.wav"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-              </div>
-
-              {/* Error Display */}
-              {error && (
-                <div className="mb-8 max-w-2xl mx-auto animate-fade-in">
-                  <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 text-center">
-                    <p className="text-red-400 text-sm font-medium">{error}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Generate Button */}
-              {file && !error && !isRecording && (
-                <div className="flex justify-center mb-14 animate-fade-in">
-                  <button
-                    onClick={handleGenerate}
-                    className="group relative h-14 sm:h-16 rounded-2xl px-10 sm:px-14 text-base font-semibold bg-white text-black hover:bg-white/95 transition-all duration-300 hover:scale-105 overflow-hidden cursor-pointer"
-                  >
-                    <span className="relative z-10 flex items-center gap-3">
-                      <span>Generate Narrative</span>
-                      <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" strokeWidth={2.5} />
-                    </span>
-                  </button>
-                </div>
-              )}
-
-              {/* Example Preview */}
-              <div className="group relative">
-                <div className="absolute inset-0 bg-white/[0.01] rounded-3xl blur-xl" />
-                <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.06] rounded-3xl p-6 sm:p-8">
-                  <div className="flex items-center gap-2 mb-5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-white/50" />
-                    <h3 className="text-xs font-bold uppercase tracking-widest text-white/50">Example Output</h3>
-                  </div>
-                  <div className="flex flex-wrap gap-2 mb-5">
-                    {['Cars passing', 'Dog barking', 'Children laughing', 'Construction', 'Bicycle bell'].map((tag) => (
-                      <span
-                        key={tag}
-                        className="text-xs px-4 py-2 rounded-full bg-white/[0.05] text-white/60 border border-white/[0.08] hover:bg-white/[0.08] hover:border-white/[0.12] transition-all duration-300 cursor-default"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                  <p className="text-sm leading-relaxed text-white/60 italic">
-                    "The afternoon pulse of the city beats steadily. Cars rush past in waves, their engines humming a familiar urban melody. Somewhere nearby, a dog barks—sharp, insistent..."
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* PROCESSING PHASE */}
-          {phase === 'processing' && (
-            <div className="animate-fade-in">
-              <div className="relative">
-                <div className="absolute inset-0 bg-white/[0.02] rounded-3xl blur-2xl animate-pulse-slow" />
-                <div className="relative bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-10 sm:p-14 overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.03] to-transparent -translate-x-full animate-shimmer-fast" />
-                  
-                  <div className="relative text-center mb-10">
-                    <div className="inline-flex items-center gap-3 mb-6">
-                      <div className="relative">
-                        <div className="w-2.5 h-2.5 rounded-full bg-white/60 animate-ping absolute" />
-                        <div className="w-2.5 h-2.5 rounded-full bg-white/80 relative" />
-                      </div>
-                      <h2 className="text-2xl font-bold text-white/90">
-                        Generating Narrative
-                      </h2>
-                      <Loader2 className="w-6 h-6 text-white/60 animate-spin-slow" strokeWidth={2} />
-                    </div>
-                    
-                    <div className="mb-3">
-                      <div className="h-1.5 w-full max-w-lg mx-auto rounded-full bg-white/[0.06] overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-white/80 transition-all duration-300"
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                    </div>
-                    <p className="text-sm text-white/40 font-medium mb-2">{Math.round(progress)}% Complete</p>
-                    <p className="text-sm text-white/60 font-medium animate-pulse">{processingMessage}</p>
+                  {/* Text Section */}
+                  <div className="md:col-span-2 text-left">
+                     <motion.div 
+                      initial={{ opacity: 0 }} 
+                      animate={{ opacity: 1 }} 
+                      className="inline-block px-3 py-1 rounded-full border border-[#D9A441]/20 bg-[#2B1D13]/50 text-[#D9A441] text-[10px] font-bold uppercase tracking-widest mb-6"
+                    >
+                      Beta v3.0
+                    </motion.div>
+                    <motion.h1 
+                      className="text-5xl md:text-6xl font-serif font-medium tracking-tight text-[#EAE0D5] mb-6 leading-[1.1]"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.3 }}
+                    >
+                      High Fidelity <br/>
+                      <span className="text-[#C46A29]">Narratives.</span>
+                    </motion.h1>
+                    <motion.p 
+                      className="text-[#8B735B] text-base font-light leading-relaxed"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.5 }}
+                    >
+                      Acoustic analysis meets generative storytelling. Upload audio to begin the signal path.
+                    </motion.p>
                   </div>
 
-                  <div className="text-center">
-                    <p className="text-sm text-white/50 mb-6 font-medium">
-                      {detectedSounds.length > 0 ? 'Detected Sounds' : 'Analyzing Audio Patterns'}
-                    </p>
-                    {detectedSounds.length > 0 ? (
-                      <div className="flex flex-wrap gap-3 sm:gap-4 justify-center mb-6">
-                        {detectedSounds.map((sound, i) => {
-                          const IconComponent = getSoundIcon(sound);
-                          return (
-                            <div
-                              key={i}
-                              className="flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-white/[0.06] border border-white/[0.08] backdrop-blur-xl animate-scale-in"
-                              style={{ animationDelay: `${i * 0.1}s` }}
-                            >
-                              <IconComponent className="w-5 h-5 text-white/70" strokeWidth={2} />
-                              <span className="text-sm font-medium text-white/80">{sound}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center gap-2 mb-6">
-                        <div className="w-2 h-2 rounded-full bg-white/40 animate-pulse" style={{ animationDelay: '0s' }} />
-                        <div className="w-2 h-2 rounded-full bg-white/40 animate-pulse" style={{ animationDelay: '0.2s' }} />
-                        <div className="w-2 h-2 rounded-full bg-white/40 animate-pulse" style={{ animationDelay: '0.4s' }} />
-                      </div>
-                    )}
+                  {/* Modern Deck Interface */}
+                  <div className="md:col-span-3 bg-[#181717] border border-white/5 rounded-[32px] p-2 shadow-2xl relative">
+                    <div className="bg-[#111010] rounded-[24px] border border-white/5 p-8 relative overflow-hidden">
+                      
+                      {/* Subtle Amber Gradient Top */}
+                      <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-[#C46A29]/5 to-transparent pointer-events-none" />
 
-                    {/* Processing Details Toggle */}
-                    {processingLogs.length > 0 && (
-                      <div className="mt-8">
-                        <button
-                          onClick={() => setShowProcessingDetails(!showProcessingDetails)}
-                          className="group flex items-center gap-2 mx-auto px-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.08] transition-all duration-200 cursor-pointer"
-                        >
-                          <Code className="w-4 h-4 text-white/60" strokeWidth={2} />
-                          <span className="text-xs font-medium text-white/60">
-                            {showProcessingDetails ? 'Hide' : 'View'} Processing Details
-                          </span>
-                          {showProcessingDetails ? (
-                            <ChevronUp className="w-4 h-4 text-white/60" strokeWidth={2} />
-                          ) : (
-                            <ChevronDown className="w-4 h-4 text-white/60" strokeWidth={2} />
+                      <div className="space-y-6 relative z-10">
+                        {/* Record Button */}
+                        <motion.button 
+                          onClick={isRecording ? stopRecording : startRecording}
+                          whileHover={{ scale: 1.01 }}
+                          whileTap={{ scale: 0.99 }}
+                          className={cn(
+                            "w-full h-32 rounded-2xl border flex flex-col items-center justify-center gap-3 transition-all duration-300 group relative overflow-hidden",
+                            isRecording 
+                              ? "bg-[#5A1F26]/20 border-[#C46A29]/50" 
+                              : "bg-[#1a1818] border-[#2B1D13] hover:border-[#D9A441]/30 hover:bg-[#222020]"
                           )}
-                        </button>
+                        >
+                          {isRecording ? (
+                            <>
+                              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#5A1F26]/40 border border-[#C46A29]/30 mb-1">
+                                <div className="w-2 h-2 rounded-full bg-[#C46A29] animate-pulse" />
+                                <span className="font-mono text-[10px] text-[#C46A29] tracking-widest">{formatTime(recordingTime)}</span>
+                              </div>
+                              <span className="text-xs text-[#C46A29] animate-pulse">Recording Input...</span>
+                            </>
+                          ) : (
+                            <>
+                              <div className="w-12 h-12 rounded-full bg-[#2B1D13] flex items-center justify-center group-hover:bg-[#3d2a1d] transition-colors">
+                                <Mic className="w-5 h-5 text-[#8B735B] group-hover:text-[#D9A441]" />
+                              </div>
+                              <span className="text-sm font-medium text-[#8B735B] group-hover:text-[#EAE0D5]">Record Microphone</span>
+                            </>
+                          )}
+                        </motion.button>
 
-                        {showProcessingDetails && (
-                          <div className="mt-4 max-h-64 overflow-y-auto bg-black/40 backdrop-blur-sm border border-white/[0.06] rounded-xl p-4 text-left animate-fade-in">
-                            <div className="font-mono text-xs space-y-1">
-                              {processingLogs.map((log, i) => (
-                                <div key={i} className="text-white/50 leading-relaxed">
-                                  {log}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                        {/* UPDATED UPLOAD BUTTON (Compact Style) */}
+                        <div className="relative group">
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".mp3,.wav"
+                            onChange={handleFileChange}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            disabled={isRecording}
+                          />
+                          <motion.div 
+                            whileHover={{ scale: 1.01 }}
+                            className={cn(
+                              "w-full h-12 rounded-full border flex items-center justify-center gap-2 transition-all duration-300 cursor-pointer",
+                              file 
+                                ? "bg-[#C46A29]/10 border-[#C46A29]/40 text-[#C46A29]" 
+                                : "bg-[#1a1818] border-[#2B1D13] text-[#8B735B] hover:border-[#8B735B] hover:text-[#D9A441]"
+                            )}
+                          >
+                            {file ? (
+                              <>
+                                <Check className="w-4 h-4" />
+                                <span className="text-xs font-medium truncate max-w-[180px]">{file.name}</span>
+                              </>
+                            ) : (
+                              <>
+                                <FileAudio className="w-4 h-4" />
+                                <span className="text-xs font-medium uppercase tracking-wider">Select Audio File</span>
+                              </>
+                            )}
+                          </motion.div>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
-          {/* TEXT OUTPUT PHASE */}
-          {phase === 'textOutput' && (
-            <div className="animate-fade-in">
-              <div className="relative">
-                <div className="absolute inset-0 bg-white/[0.01] rounded-3xl blur-xl" />
-                <div className="relative bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8 sm:p-12">
-                  <div className="text-center mb-8">
-                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.06] border border-white/[0.08] mb-4">
-                      <div className="w-1.5 h-1.5 rounded-full bg-white/70" />
-                      <span className="text-xs font-semibold text-white/70">Generation Complete</span>
+                      {error && (
+                        <motion.div 
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          className="mt-4 p-3 rounded-lg bg-[#5A1F26]/20 border border-[#5A1F26] text-red-300 text-xs text-center"
+                        >
+                          {error}
+                        </motion.div>
+                      )}
+
+                      <div className="mt-8">
+                        <Button 
+                          onClick={handleGenerate} 
+                          disabled={!file || isRecording} 
+                          className="w-full rounded-xl h-14"
+                          icon={Sparkles}
+                        >
+                          Process Audio
+                        </Button>
+                      </div>
                     </div>
-                    <h2 className="text-2xl sm:text-3xl font-bold mb-2 text-white/95">Your Narrative</h2>
-                    {transcript && transcript !== '(no speech)' && (
-                      <p className="text-sm text-white/40 italic mt-2">Transcript: "{transcript}"</p>
-                    )}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* PHASE 2: PROCESSING (Animated Wheel) */}
+              {phase === 'processing' && (
+                <motion.div 
+                  key="processing"
+                  variants={fadeInUp}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="flex flex-col items-center justify-center"
+                >
+                  {/* ANIMATED LOADER */}
+                  <div className="relative mb-12">
+                    <div className="absolute inset-0 bg-[#D9A441]/10 blur-2xl rounded-full" />
+                    <div className="relative w-40 h-40 flex items-center justify-center">
+                        
+                        {/* Spinning Outer Ring */}
+                        <motion.div 
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                          className="absolute inset-0 rounded-full border border-dashed border-[#2B1D13]"
+                        />
+                        
+                        {/* Pulsing Middle Ring */}
+                        <motion.div 
+                          animate={{ scale: [1, 1.05, 1], opacity: [0.5, 0.8, 0.5] }}
+                          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                          className="absolute inset-2 rounded-full border border-[#C46A29]/20"
+                        />
+
+                        <svg className="w-full h-full -rotate-90 relative z-10">
+                         {/* Progress */}
+                         <motion.circle 
+                          cx="80" cy="80" r="70" 
+                          stroke="#C46A29" strokeWidth="3" 
+                          fill="transparent" 
+                          strokeDasharray="440"
+                          strokeDashoffset={440 - (440 * progress) / 100}
+                          strokeLinecap="round"
+                          transition={{ duration: 0.5, ease: "easeOut" }}
+                        />
+                      </svg>
+                      <span className="absolute text-4xl font-serif text-[#EAE0D5]">{Math.round(progress)}%</span>
+                    </div>
+                  </div>
+
+                  <h3 className="text-xl font-serif text-[#EAE0D5] mb-2 tracking-wide">{processingMessage}</h3>
+                  <p className="text-[#8B735B] text-xs mb-10 font-mono uppercase tracking-widest">Analyzing Signal</p>
+
+                  <div className="flex flex-wrap justify-center gap-3 max-w-lg mx-auto mb-10">
+                    {detectedSounds.map((sound, i) => {
+                       const Icon = getSoundIcon(sound);
+                       return (
+                        <motion.div 
+                          key={i}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="flex items-center gap-2 px-4 py-2 bg-[#1a1818] border border-white/5 rounded-full"
+                        >
+                          <Icon className="w-3 h-3 text-[#D9A441]" />
+                          <span className="text-xs text-[#EAE0D5] font-medium capitalize">{sound}</span>
+                        </motion.div>
+                       );
+                    })}
                   </div>
                   
-                  <div className="max-w-3xl mx-auto mb-10 bg-white/[0.03] rounded-2xl p-6 sm:p-8 border border-white/[0.06]">
-                    <p className="text-base sm:text-lg leading-relaxed text-white/75">
+                  <button 
+                    onClick={() => setShowProcessingDetails(!showProcessingDetails)}
+                    className="text-[10px] text-[#5A4A3F] hover:text-[#D9A441] transition-colors uppercase tracking-widest flex items-center gap-2 border-b border-dashed border-[#5A4A3F] pb-1"
+                  >
+                    <Code className="w-3 h-3" />
+                    <span>System Logs</span>
+                  </button>
+
+                  <AnimatePresence>
+                    {showProcessingDetails && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 200 }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mt-6 w-full max-w-lg bg-[#0a0909] border border-[#2B1D13] rounded-xl p-4 overflow-y-auto font-mono text-[10px] text-[#8B735B]"
+                      >
+                        {processingLogs.map((log, i) => (
+                          <div key={i} className="mb-1 opacity-70 border-l border-[#5A1F26] pl-2">{log}</div>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              )}
+
+              {/* PHASE 3: OUTPUT */}
+              {phase === 'textOutput' && (
+                <motion.div 
+                  key="output"
+                  variants={fadeInUp}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                >
+                  <div className="mb-6 flex items-center justify-between">
+                    <div>
+                      <h2 className="text-2xl font-serif text-[#EAE0D5]">Narrative Output</h2>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="secondary" onClick={handleCopy} className="px-4 h-10 rounded-xl">
+                        {isCopied ? <Check className="w-4 h-4 text-green-400"/> : <Copy className="w-4 h-4"/>}
+                      </Button>
+                      <Button 
+                        variant="secondary" 
+                        className="px-4 h-10 rounded-xl"
+                        onClick={() => {
+                          const blob = new Blob([narration], { type: 'text/plain' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a'); a.href = url; a.download = 'narrative.txt'; a.click();
+                        }} 
+                      ><Download className="w-4 h-4"/></Button>
+                    </div>
+                  </div>
+
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="mb-10 bg-[#181717] p-10 rounded-3xl border border-white/5 shadow-xl"
+                  >
+                    <p className="font-serif text-xl md:text-2xl leading-loose text-[#C9CCD1] antialiased tracking-wide whitespace-pre-wrap">
                       {narration}
                     </p>
-                  </div>
-                  
-                  <div className="flex flex-wrap gap-3 sm:gap-4 justify-center">
-                    <button
+                  </motion.div>
+
+                  <div className="flex justify-center">
+                    <Button 
                       onClick={() => {
                         setPhase('narration');
                         setCurrentSubtitle(0);
                         setCurrentTime(0);
                         setIsPaused(false);
                       }}
-                      className="group flex items-center gap-3 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white text-black hover:bg-white/95 transition-all duration-300 hover:scale-105 cursor-pointer"
+                      icon={Play}
+                      className="px-12 py-4 text-base rounded-full shadow-[0_10px_30px_-5px_rgba(196,106,41,0.4)]"
                     >
-                      <Play className="w-5 h-5" strokeWidth={2.5} fill="currentColor" />
-                      <span>Play Narration</span>
-                      <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" strokeWidth={2.5} />
-                    </button>
-                    <button
-                      onClick={handleCopy}
-                      className="flex items-center gap-2.5 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90 cursor-pointer"
-                    >
-                      <Copy className="w-4.5 h-4.5" strokeWidth={2} />
-                      <span>Copy</span>
-                    </button>
-                    <button
-                      onClick={handleExport}
-                      className="flex items-center gap-2.5 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90 cursor-pointer"
-                    >
-                      <Download className="w-4.5 h-4.5" strokeWidth={2} />
-                      <span>Export</span>
-                    </button>
+                      Start Playback
+                    </Button>
                   </div>
-                </div>
-              </div>
-            </div>
-          )}
+                </motion.div>
+              )}
 
-          {/* NARRATION PHASE */}
-          {phase === 'narration' && (
-            <div className="animate-fade-in">
-              <div className="relative">
-                <div className="absolute inset-0 bg-white/[0.02] rounded-3xl blur-2xl animate-pulse-slow" />
-                <div className="relative bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8 sm:p-12">
-                  <div className="text-center mb-10">
-                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.06] border border-white/[0.08] mb-4">
-                      <div className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
-                      <span className="text-xs font-semibold text-white/70">Now Playing</span>
+              {/* PHASE 4: PLAYBACK */}
+              {phase === 'narration' && (
+                <motion.div 
+                  key="narration"
+                  variants={fadeInUp}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="flex flex-col items-center"
+                >
+                  {/* Sleek Modern Player */}
+                  <div className="w-full max-w-2xl bg-[#181717] border border-white/5 rounded-[40px] p-8 md:p-12 shadow-2xl relative overflow-hidden">
+                    {/* Top Status */}
+                    <div className="flex items-center justify-between mb-10">
+                         <div className="flex items-center gap-2">
+                             <div className="w-2 h-2 rounded-full bg-[#C46A29] animate-pulse" />
+                             <span className="text-[10px] font-bold text-[#8B735B] uppercase tracking-widest">Now Playing</span>
+                         </div>
+                         <span className="text-[10px] font-mono text-[#5A4A3F]">{formatTime(currentTime)} / {formatTime(audioRef.current?.duration || 0)}</span>
                     </div>
-                    <h2 className="text-2xl font-bold mb-3 text-white/95">Audio Narration</h2>
-                    <p className="text-base text-white/50 font-mono">
-                      <span className="text-white/70">{formatTime(currentTime)}</span>
-                      <span className="mx-2 text-white/30">/</span>
-                      <span>{formatTime(audioRef.current?.duration || 0)}</span>
-                    </p>
-                  </div>
 
-                  {/* Enhanced Waveform */}
-                  <div className="relative mb-12">
-                    <div className="absolute inset-0 bg-white/[0.02] blur-2xl" />
-                    <div className="relative flex h-32 sm:h-40 items-end justify-center gap-0.5 sm:gap-1">
-                      {[...Array(35)].map((_, i) => {
-                        const totalBars = 35;
-                        const audioDuration = audioRef.current?.duration || 1;
-                        const progressPercent = (currentTime / audioDuration) * 100;
-                        const barPosition = (i / totalBars) * 100;
-                        const isPastProgress = barPosition <= progressPercent;
-                        const randomHeight = `${Math.random() * 60 + 20}%`;
-                        
-                        return (
-                          <div
-                            key={i}
-                            className={`w-0.5 sm:w-1 rounded-full transition-all duration-300 ${
-                              isPastProgress && !isPaused ? 'animate-wave bg-white' : 'bg-white/30'
-                            }`}
-                            style={{
-                              height: isPastProgress ? randomHeight : '20%',
-                              animationDelay: isPastProgress && !isPaused ? `${i * 0.08 - 2}s` : undefined,
-                              animationDuration: isPastProgress && !isPaused ? '1.8s' : undefined
+                    {/* Clean Gold Waveform */}
+                    <div className="h-32 flex items-center justify-center gap-1.5 mb-12">
+                      {[...Array(32)].map((_, i) => {
+                         const isActive = (i / 32) * (audioRef.current?.duration || 1) < currentTime;
+                         return (
+                          <motion.div 
+                            key={i} 
+                            animate={{ 
+                              height: isActive && !isPaused ? [24, 80, 24] : 24,
+                              opacity: isActive ? 1 : 0.3,
+                              backgroundColor: isActive ? "#C46A29" : "#2B1D13",
                             }}
+                            transition={{ 
+                              duration: 0.8, 
+                              repeat: Infinity, 
+                              delay: i * 0.04,
+                              ease: "easeInOut"
+                            }}
+                            className="w-1.5 rounded-full"
                           />
-                        );
+                         )
                       })}
                     </div>
+
+                    <div className="min-h-[80px] flex items-center justify-center text-center relative z-10">
+                      <AnimatePresence mode='wait'>
+                        <motion.p 
+                          key={currentSubtitle}
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -5 }}
+                          className="font-serif text-xl text-[#EAE0D5] leading-relaxed"
+                        >
+                          {narrativeSentences[currentSubtitle]}
+                        </motion.p>
+                      </AnimatePresence>
+                    </div>
                   </div>
 
-                  {/* Subtitle Display */}
-                  <div className="min-h-24 sm:min-h-28 flex items-center justify-center mb-10 px-4">
-                    <p className="text-lg sm:text-xl lg:text-2xl leading-relaxed text-center max-w-3xl font-medium text-white/85 animate-pulse-subtle">
-                      {narrativeSentences[currentSubtitle] || narration}
-                    </p>
-                  </div>
+                  <audio ref={audioRef} src={audioUrl} crossOrigin="anonymous" onEnded={() => setIsPaused(true)} className="hidden" />
 
-                  {/* Hidden Audio Element */}
-<audio
-  ref={audioRef}
-  src={audioUrl}
-  crossOrigin="anonymous"  // ADD THIS
-  onEnded={() => {
-    setIsPaused(true);
-    setCurrentTime(0);
-    setCurrentSubtitle(0);
-  }}
-  className="hidden"
-/>
-
-                  {/* Enhanced Controls */}
-                  <div className="flex flex-wrap gap-3 sm:gap-4 justify-center">
-                    <button
+                  <div className="flex items-center gap-6 mt-8 bg-[#111010]/80 backdrop-blur-md p-2 rounded-full border border-white/5">
+                    <button onClick={() => setPhase('textOutput')} className="w-12 h-12 rounded-full flex items-center justify-center hover:bg-white/5 text-[#8B735B] transition-colors"><ArrowLeft className="w-5 h-5" /></button>
+                    
+                    <motion.button 
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                       onClick={() => {
-                        if (audioRef.current) {
-                          if (isPaused) {
-                            audioRef.current.play();
-                          } else {
-                            audioRef.current.pause();
-                          }
-                          setIsPaused(!isPaused);
-                        }
+                        if (audioRef.current) isPaused ? audioRef.current.play() : audioRef.current.pause();
+                        setIsPaused(!isPaused);
                       }}
-                      className="group relative flex h-14 sm:h-16 w-14 sm:w-16 items-center justify-center rounded-2xl bg-white text-black hover:bg-white/95 transition-all duration-300 hover:scale-110 cursor-pointer"
+                      className="w-16 h-16 flex items-center justify-center bg-[#C46A29] text-[#111010] rounded-full shadow-lg"
                     >
-                      {isPaused ? (
-                        <Play className="w-6 h-6 sm:w-7 sm:h-7" strokeWidth={2.5} fill="currentColor" />
-                      ) : (
-                        <Pause className="w-6 h-6 sm:w-7 sm:h-7" strokeWidth={2.5} fill="currentColor" />
-                      )}
-                    </button>
-                    <button
-                      onClick={handleDownloadAudio}
-                      className="flex items-center gap-2.5 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90 cursor-pointer"
+                      {isPaused ? <Play className="w-6 h-6 fill-current ml-1" /> : <Pause className="w-6 h-6 fill-current" />}
+                    </motion.button>
+
+                    <button 
+                      onClick={() => { const a = document.createElement('a'); a.href = audioUrl; a.download = 'narration.mp3'; a.click(); }} 
+                      className="w-12 h-12 rounded-full flex items-center justify-center hover:bg-white/5 text-[#8B735B] transition-colors"
                     >
-                      <Download className="w-4.5 h-4.5" strokeWidth={2} />
-                      <span>Download Audio</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (audioRef.current) {
-                          audioRef.current.pause();
-                          audioRef.current.currentTime = 0;
-                        }
-                        setPhase('textOutput');
-                        setCurrentSubtitle(0);
-                        setCurrentTime(0);
-                        setIsPaused(false);
-                      }}
-                      className="flex items-center gap-3 rounded-2xl px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base font-semibold bg-white/[0.06] backdrop-blur-sm border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.12] transition-all duration-300 hover:scale-105 text-white/90 cursor-pointer"
-                    >
-                      <ArrowLeft className="w-5 h-5" strokeWidth={2} />
-                      <span>Back to Text</span>
+                      <Download className="w-5 h-5" />
                     </button>
                   </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </main>
+                </motion.div>
+              )}
 
-      <style>{`
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes wave {
-          0%, 100% { transform: scaleY(0.3); }
-          50% { transform: scaleY(1); }
-        }
-        @keyframes shimmer-fast {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(200%); }
-        }
-        @keyframes float {
-          0%, 100% { transform: translate(0, 0); }
-          33% { transform: translate(30px, -30px); }
-          66% { transform: translate(-20px, 20px); }
-        }
-        @keyframes float-delayed {
-          0%, 100% { transform: translate(0, 0); }
-          33% { transform: translate(-30px, 30px); }
-          66% { transform: translate(20px, -20px); }
-        }
-        @keyframes pulse-slow {
-          0%, 100% { opacity: 0.4; }
-          50% { opacity: 0.7; }
-        }
-        @keyframes pulse-subtle {
-          0%, 100% { opacity: 0.85; }
-          50% { opacity: 1; }
-        }
-        @keyframes scale-in {
-          from { opacity: 0; transform: scale(0.9); }
-          to { opacity: 1; transform: scale(1); }
-        }
-        @keyframes spin-slow {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .animate-fade-in {
-          animation: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        .animate-wave {
-          animation: wave 1.8s infinite ease-in-out;
-        }
-        .animate-shimmer-fast {
-          animation: shimmer-fast 2.5s infinite;
-        }
-        .animate-float {
-          animation: float 20s infinite ease-in-out;
-        }
-        .animate-float-delayed {
-          animation: float-delayed 25s infinite ease-in-out;
-        }
-        .animate-pulse-slow {
-          animation: pulse-slow 4s infinite ease-in-out;
-        }
-        .animate-pulse-subtle {
-          animation: pulse-subtle 3s infinite ease-in-out;
-        }
-        .animate-scale-in {
-          animation: scale-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-          opacity: 0;
-        }
-        .animate-spin-slow {
-          animation: spin-slow 3s linear infinite;
-        }
-      `}</style>
+            </AnimatePresence>
+          </div>
+        </main>
+      )}
     </div>
   );
 }
